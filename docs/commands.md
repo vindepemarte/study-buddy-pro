@@ -14,6 +14,10 @@ Commands that operate on text follow a consistent input priority:
 
 This means you can highlight text anywhere on screen, summon Thuki with double-tap Control, type a command, and hit Enter without retyping the selected content.
 
+## Image input on text-only models
+
+`/extract`, `/tldr`, `/translate`, `/rewrite`, `/refine`, `/bullets`, `/todos`, and `/explain` read attached images locally via macOS Vision OCR, so they work even when the active model has no vision capability. Only plain submits and `/screen` alone require a vision model to read images. See [OCR-supported commands](./ocr-commands.md) for the full list and details.
+
 ## /search
 
 Runs agentic web search and answers from live sources with citations.
@@ -97,9 +101,11 @@ Translates text to another language.
 
 **Behavior:** Outputs only the translation with no commentary or explanation.
 
+**Composable:** `/translate` works with attached images or `/screen`. Vision OCR extracts the text first; translation runs on the result. Omitting a target language defaults to Vietnamese.
+
 **Language format:** The target language can be a full name (`French`), ISO code (`fr`, `fra`), or common shorthand.
 
-**Default behavior:** If no language is specified, non-English input translates to English and English input translates to Vietnamese.
+**Default behavior:** If no language is specified, the text is translated to Vietnamese.
 
 ---
 
@@ -115,6 +121,8 @@ Rewrites text to read more naturally and clearly.
 
 **Behavior:** Preserves the original meaning while improving flow and readability. Outputs only the rewritten text.
 
+**Composable:** `/rewrite` works with attached images or `/screen`. Vision OCR extracts the text first, then rewrites it.
+
 ---
 
 ## /tldr
@@ -128,6 +136,8 @@ Summarizes text into 1-3 short, direct sentences.
 - `/tldr [paste a long article]`: summarizes typed or pasted text
 
 **Behavior:** Captures the core message, key decision, or critical takeaway. Skips background detail and qualifications.
+
+**Composable:** `/tldr` works with attached images or `/screen`. Vision OCR extracts the text first, then summarizes it.
 
 ---
 
@@ -143,6 +153,8 @@ Fixes grammar, spelling, and punctuation while preserving your voice.
 
 **Behavior:** Corrects errors and smooths rough phrasing without restructuring or adding new ideas. Your original tone and meaning stay intact.
 
+**Composable:** `/refine` works with attached images or `/screen`. Vision OCR extracts the text first, then refines it.
+
 ---
 
 ## /bullets
@@ -156,6 +168,8 @@ Extracts key points from text as a markdown bullet list.
 - `/bullets [paste meeting notes]`: extracts key points from typed or pasted content
 
 **Behavior:** Each point is a concise, self-contained statement. Ordered by importance or logical sequence. Filler and repetition are removed. Output uses `- ` prefixed markdown bullets.
+
+**Composable:** `/bullets` works with attached images or `/screen`. Vision OCR extracts the text first, then extracts key points.
 
 ---
 
@@ -172,6 +186,8 @@ Explains any concept, term, or code snippet in plain language, always with a con
 
 **Behavior:** Outputs a brief explanation followed by at least one concrete example. Assumes no background knowledge. Skips jargon or defines it when unavoidable. No intro or sign-off.
 
+**Composable:** `/explain` works with attached images or `/screen`. Vision OCR extracts the text first, then explains it.
+
 ---
 
 ## /todos
@@ -185,3 +201,5 @@ Summarizes what a piece of text is about, then extracts every task, action item,
 - `/todos [paste a conversation or notes]`: processes typed or pasted content
 
 **Behavior:** Responds in two parts: a short paragraph explaining the context and what is at stake, followed by a `- [ ]` checkbox list of all tasks. Each to-do includes who is responsible, plus any deadline or timeframe if mentioned.
+
+**Composable:** `/todos` works with attached images or `/screen`. Vision OCR extracts the text first, then extracts to-dos.

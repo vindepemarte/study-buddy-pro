@@ -9,16 +9,11 @@ export type Tip = string | { text: string; url: string };
 
 export const TIPS: readonly Tip[] = [
   'Use /screen to snap your display and attach it to the chat for visual context',
+  'Use /extract to extract any text from images or screenshots',
   {
-    text: '/extract reads all text from any image or screenshot using macOS Vision OCR; no LLM required ↗',
-    url: 'https://github.com/quiet-node/thuki/blob/main/docs/extract.md',
+    text: 'OCR-supported commands (/extract, /translate, etc.) read images locally: no vision model needed ↗',
+    url: 'https://github.com/quiet-node/thuki/blob/main/docs/ocr-commands.md',
   },
-  'Combine /screen and /extract in one message to capture your screen and pull out every word instantly',
-  {
-    text: '/extract uses native macOS OCR so it returns results in under a second, far faster than any vision model ↗',
-    url: 'https://github.com/quiet-node/thuki/blob/main/docs/extract.md',
-  },
-  'Paste an image and type /extract to copy terminal output, error messages, or any on-screen text as plain text',
   'Highlight text in any app before summoning Thuki to include it as context',
   '/think makes Thuki reason step by step before answering, great for hard questions',
   '/search pulls live web results into the chat so answers stay current',
@@ -36,6 +31,8 @@ export const TIPS: readonly Tip[] = [
   '/todos scans highlighted text or notes and pulls out every action item as a checkbox list',
   'Type / in the ask bar to see all available commands and pick one with Tab',
   'Commands can combine in one message: try /screen /think to capture your screen and reason through it',
+  'Paste an image and type /tldr to summarize its text using Vision OCR; no vision model needed',
+  'Type /translate french with an attached image to translate printed text via Vision OCR, no vision model needed',
   'Everything runs locally through Ollama; your conversations never leave your machine',
   'Attach images to your messages for visual context; visit Settings to adjust the limit',
   'Turn on Keep Warm in Settings to skip the cold-load wait so your first reply is near-instant every time',

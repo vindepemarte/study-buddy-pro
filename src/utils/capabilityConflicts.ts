@@ -1,6 +1,30 @@
 import type { ModelCapabilities } from '../types/model';
 
 /**
+ * Public URL for the OCR-supported-commands doc, embedded in capability
+ * strip messages that recommend the OCR escape hatch (image attached or
+ * in history while the active model has no vision capability). Points at
+ * the `main` branch on GitHub so the link works for DMG users who don't
+ * have the repo checked out locally.
+ */
+export const OCR_COMMANDS_DOC_URL =
+  'https://github.com/quiet-node/thuki/blob/main/docs/ocr-commands.md';
+
+/**
+ * Discriminated message shape consumed by `CapabilityMismatchStrip`. Most
+ * branches return a plain string; the vision-conflict branches return a
+ * three-part shape that embeds an inline link (the OCR-supported-commands
+ * doc) inside the message so only the link text is clickable.
+ */
+export type CapabilityConflictMessage =
+  | string
+  | {
+      before: string;
+      link: { text: string; url: string };
+      after: string;
+    };
+
+/**
  * Compose-state inputs the gate inspects. `imageCount` covers manually
  * attached + pasted + dragged images. `hasScreenCommand` covers the
  * `/screen` slash command (which produces an image after capture and so
@@ -125,7 +149,7 @@ export function getCapabilityConflict(
   capabilities: ModelCapabilities | undefined | null,
   state: ComposeCapabilityState,
   history: HistoryCapabilityState = EMPTY_HISTORY_STATE,
-): string | null {
+): CapabilityConflictMessage | null {
   if (!modelName) {
     // Environment-state messaging lives in `getEnvironmentMessage`. This
     // helper has no insight into Ollama reachability or installed count,
@@ -150,7 +174,11 @@ export function getCapabilityConflict(
   // user is continuing it) and only inform.
   if (needsVision) {
     if (!capabilities.vision) {
-      return `${name} reads text only. Try a vision model for images.`;
+      return {
+        before: `${name} reads text only. Use an `,
+        link: { text: 'OCR-supported command', url: OCR_COMMANDS_DOC_URL },
+        after: ', or switch to a vision model for images.',
+      };
     }
     // Vision model, but it may cap the number of images per request
     // (today: mllama-family models such as llama3.2-vision are 1-image
@@ -180,7 +208,11 @@ export function getCapabilityConflict(
   // user knows why earlier content is missing from the model's view of
   // the thread, and how to recover (switch back to a capable model).
   if (history.historyHasImages && !capabilities.vision) {
-    return `Images from earlier turns are hidden from ${name} because it reads text only. Switch to a vision model to keep them.`;
+    return {
+      before: `${name} reads text only. Continue using `,
+      link: { text: 'OCR-supported commands', url: OCR_COMMANDS_DOC_URL },
+      after: ', or switch to a vision model to send images directly.',
+    };
   }
   // Vision-capable but with a per-message image cap that earlier turns
   // exceed. The backend filter trims to `maxImages` keeping the first

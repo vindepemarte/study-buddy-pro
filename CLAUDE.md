@@ -60,6 +60,10 @@ The UI morphs between two states: a compact spotlight-style input bar → an exp
 - **`config/commands.ts`** — slash command registry: defines supported commands and the `SCREEN_CAPTURE_PLACEHOLDER` sentinel used to show a loading tile in chat while a `/screen` capture is in flight
 - **`components/CommandSuggestion.tsx`** — slash command autocomplete popover. Contains `iconForTrigger()`, a switch statement mapping trigger strings to inline SVG constants. **Every new slash command needs a dedicated case here.** Without it, the command falls through to the default, which returns `SCREEN_ICON` (the monitor icon). Steps: (1) add a hoisted `const FOO_ICON = (<svg .../>)` constant, (2) add `case '/foo': return FOO_ICON;` to `iconForTrigger()`.
 
+### Slash commands
+
+User-facing reference for all commands lives in `docs/commands.md`. **Any new slash command must go through the same unified dispatch flow as the existing ones in `src/App.tsx`** (shared pre-flight in `handleSubmit`, then a command-specific stage-2 handler). Do not add a bespoke submit path; extend the existing dispatch instead. This keeps gating, deferral, capability checks, and cancellation behavior consistent across every command.
+
 ### Backend (`src-tauri/src/`)
 
 - **`lib.rs`** — app setup: loads `AppConfig` via `config::load`, converts window to NSPanel (fullscreen overlay), registers tray, spawns hotkey listener, intercepts close events (hides instead of quits)
