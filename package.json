@@ -39,7 +39,7 @@
     "validate-build": "bun run lint && bun run format:check && bun run typecheck && bun run build:all"
   },
   "dependencies": {
-    "@fontsource/source-serif-4": "^5.2.9",
+    "@fontsource/nunito": "^5.2.7",
     "@tauri-apps/api": "^2.11.0",
     "framer-motion": "^12.38.0",
     "katex": "^0.16.0",
