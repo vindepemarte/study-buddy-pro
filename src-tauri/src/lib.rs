@@ -51,11 +51,6 @@ use tauri::ActivationPolicy;
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{CollectionBehavior, ManagerExt, PanelLevel, StyleMask, WebviewWindowExt};
 
-#[cfg(target_os = "macos")]
-use objc2::MainThreadMarker;
-#[cfg(target_os = "macos")]
-use objc2_app_kit::NSApplication;
-
 // ─── NSPanel definition (macOS only) ────────────────────────────────────────
 
 // Each tauri_panel! invocation emits `use` statements at its call-site
@@ -65,8 +60,9 @@ use objc2_app_kit::NSApplication;
 // any future panel subclass the same way.
 //
 // ThukiPanel - overlay NSPanel: floating, keyboard input for chat.
-// ThukiSettingsPanel - settings NSPanel: non-floating, keyboard input,
-//   no ActivationPolicy switch so the Dock icon never appears.
+// ThukiSettingsPanel - settings NSPanel: floating + nonactivating so it
+//   appears on the user's current Space; keyboard input; no
+//   ActivationPolicy switch so the Dock icon never appears.
 #[cfg(target_os = "macos")]
 mod _thuki_panel {
     use tauri::Manager;
@@ -89,13 +85,35 @@ mod _settings_panel {
         panel!(ThukiSettingsPanel {
             config: {
                 can_become_key_window: true,
-                is_floating_panel: false
+                is_floating_panel: true
             }
         })
     }
 }
 #[cfg(target_os = "macos")]
 use _settings_panel::ThukiSettingsPanel;
+
+// ThukiUpdatePanel - "What's New" NSPanel. Modeled on the OVERLAY panel
+//   (ThukiPanel), not settings: floating + nonactivating so it can appear
+//   on whatever Space the user is on, including over another app's
+//   fullscreen Space (the footer that opens it can be summoned there).
+//   `can_become_key_window` stays true so the four action buttons still
+//   receive clicks/keyboard. Separate subclass/module so the tauri_panel!
+//   `use` emissions don't collide with the other two.
+#[cfg(target_os = "macos")]
+mod _update_panel {
+    use tauri::Manager;
+    tauri_nspanel::tauri_panel! {
+        panel!(ThukiUpdatePanel {
+            config: {
+                can_become_key_window: true,
+                is_floating_panel: true
+            }
+        })
+    }
+}
+#[cfg(target_os = "macos")]
+use _update_panel::ThukiUpdatePanel;
 
 // ─── Window helpers ─────────────────────────────────────────────────────────
 
@@ -416,16 +434,15 @@ fn show_settings_window(app_handle: &tauri::AppHandle) {
         let window = app_handle.get_webview_window("settings");
         match app_handle.get_webview_panel("settings") {
             Ok(panel) => {
-                // Activate the app so macOS knows which Space is "current".
-                // Without this, Thuki is not the active process (ActivationPolicy::Accessory
-                // + tray menu just dismissed), and moveToActiveSpace has no anchor Space to
-                // move to — the panel silently appears on its last-known Space (usually Space 1).
+                // Deliberately NO activateIgnoringOtherApps here (same as
+                // show_overlay / show_update_window). Activating the app
+                // while another app owns a fullscreen Space makes macOS
+                // switch to this app's home desktop Space to present the
+                // window, stranding it away from the user. The panel's
+                // nonactivating style + can_join_all_spaces (see
+                // init_settings_panel) make it appear in-place on whatever
+                // Space the user is on instead.
                 let _ = app_handle.run_on_main_thread(move || {
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        let ns_app = NSApplication::sharedApplication(mtm);
-                        #[allow(deprecated)]
-                        ns_app.activateIgnoringOtherApps(true);
-                    }
                     if let Some(win) = window {
                         position_settings_window(&win);
                     }
@@ -443,6 +460,84 @@ fn show_settings_window(app_handle: &tauri::AppHandle) {
         return;
     };
     position_settings_window(&window);
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+/// Centers the "What's New" update window horizontally on its monitor and
+/// places it below the macOS menu bar, mirroring `position_settings_window`
+/// but for the update window's 600 px width.
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn position_update_window(window: &tauri::WebviewWindow) {
+    const UPDATE_WIDTH: f64 = 600.0;
+    const TOP_MARGIN: f64 = 72.0;
+
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+
+    let (x, y) = if let Some(mon) = monitor {
+        let scale = mon.scale_factor();
+        let pos = mon.position();
+        let size = mon.size();
+        let logical_w = size.width as f64 / scale;
+        let mon_x = pos.x as f64 / scale;
+        let mon_y = pos.y as f64 / scale;
+        (mon_x + (logical_w - UPDATE_WIDTH) / 2.0, mon_y + TOP_MARGIN)
+    } else {
+        (100.0, TOP_MARGIN)
+    };
+
+    let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+}
+
+/// Shows (or focuses, if already visible) the "What's New" update window.
+///
+/// Mirrors `show_settings_window`: the window is converted to a
+/// `ThukiUpdatePanel` NSPanel subclass once during setup
+/// (`init_update_panel`), so it can take keyboard focus without flipping
+/// the app's ActivationPolicy to Regular (which would surface a Dock icon).
+///
+/// Idempotent: invoking while the window is already visible re-focuses
+/// without re-mounting the React tree (the close handler hides instead of
+/// destroying).
+///
+/// Falls back to raw WebviewWindow show/focus if the panel handle is
+/// unavailable (e.g., if `init_update_panel` failed at startup).
+fn show_update_window(app_handle: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let window = app_handle.get_webview_window("update");
+        match app_handle.get_webview_panel("update") {
+            Ok(panel) => {
+                // Deliberately NO activateIgnoringOtherApps here (same as
+                // show_settings_window / show_overlay). Activating the app
+                // while another app owns a fullscreen Space makes macOS
+                // switch to this app's home desktop Space to present the
+                // window, stranding it away from the user. The panel's
+                // nonactivating style + can_join_all_spaces (see
+                // init_update_panel) make it appear in-place on whatever
+                // Space the user is on instead.
+                let _ = app_handle.run_on_main_thread(move || {
+                    if let Some(win) = window {
+                        position_update_window(&win);
+                    }
+                    panel.show_and_make_key();
+                });
+                return;
+            }
+            Err(e) => {
+                eprintln!("thuki: [update] get_webview_panel failed: {e:?}");
+            }
+        }
+    }
+    let Some(window) = app_handle.get_webview_window("update") else {
+        eprintln!("thuki: [update] window 'update' not found in app config");
+        return;
+    };
+    position_update_window(&window);
     let _ = window.show();
     let _ = window.set_focus();
 }
@@ -729,10 +824,20 @@ fn init_panel(app_handle: &tauri::AppHandle) {
 /// `get_webview_panel("settings")` retrieve the same panel without
 /// re-converting.
 ///
-/// Collection behavior: `move_to_active_space` moves the panel to whichever
-/// Space is current when `show_and_make_key` is called (requires the app to be
-/// the active process first — see `show_settings_window`). `full_screen_auxiliary`
-/// allows the panel to coexist with fullscreen app Spaces.
+/// Mirrors `init_panel` / `init_update_panel` for Space behavior. Settings
+/// is opened from the tray, which the user can trigger while another app
+/// owns a fullscreen Space. `move_to_active_space` was unreliable there:
+/// macOS has no regular-desktop anchor Space and silently stranded the
+/// panel on Space 1, so picking "Settings…" from the tray opened it on the
+/// desktop and the user had to swipe Spaces to find it. The
+/// `nonactivating_panel` style + showing without `activateIgnoringOtherApps`
+/// (see `show_settings_window`) avoids the app activation that forces a
+/// Space switch; `is_floating_panel` + `can_join_all_spaces` +
+/// `full_screen_auxiliary` make the panel present on whatever Space the
+/// user is on, including a fullscreen one. `can_become_key_window` (set in
+/// the macro) keeps the Settings form inputs focusable even though the
+/// panel is nonactivating. `hides_on_deactivate(false)` keeps it open if
+/// the user clicks back into the fullscreen app without closing it.
 #[cfg(target_os = "macos")]
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn init_settings_panel(app_handle: &tauri::AppHandle) {
@@ -742,18 +847,65 @@ fn init_settings_panel(app_handle: &tauri::AppHandle) {
     };
     match window.to_panel::<ThukiSettingsPanel>() {
         Ok(panel) => {
-            panel.set_floating_panel(false);
+            panel.set_floating_panel(true);
             panel.set_level(PanelLevel::Floating.value());
+            panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
             panel.set_has_shadow(true);
+            panel.set_hides_on_deactivate(false);
             panel.set_collection_behavior(
                 CollectionBehavior::new()
-                    .move_to_active_space()
                     .full_screen_auxiliary()
+                    .can_join_all_spaces()
                     .into(),
             );
         }
         Err(e) => {
             eprintln!("thuki: [settings] NSPanel conversion failed: {e:?}");
+        }
+    }
+}
+
+/// Converts the update Tauri window into a ThukiUpdatePanel NSPanel
+/// subclass. Called once during app setup.
+///
+/// Mirrors `init_panel` (the overlay), NOT `init_settings_panel`. The
+/// update window is opened from the overlay footer, which the user can
+/// summon while another app owns a fullscreen Space. Three things together
+/// make the panel appear in-place on that Space instead of being yanked to
+/// the app's regular desktop Space. First, the `nonactivating_panel` style
+/// combined with showing it without `activateIgnoringOtherApps` (see
+/// `show_update_window`) avoids activating the app, since activation forces
+/// macOS to switch to the app's home Space. Second, `is_floating_panel`
+/// (utility panel) floats with the active Space rather than being tied to
+/// the app's window Space. Third, `can_join_all_spaces` plus
+/// `full_screen_auxiliary` makes it present on every Space, including a
+/// fullscreen one. `can_become_key_window` (set in the macro) keeps the
+/// four buttons clickable even though the panel is nonactivating, and
+/// `hides_on_deactivate(false)` keeps it up if the user clicks back into
+/// the fullscreen app without choosing an action.
+#[cfg(target_os = "macos")]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn init_update_panel(app_handle: &tauri::AppHandle) {
+    let Some(window) = app_handle.get_webview_window("update") else {
+        eprintln!("thuki: [update] window not found during init_update_panel");
+        return;
+    };
+    match window.to_panel::<ThukiUpdatePanel>() {
+        Ok(panel) => {
+            panel.set_floating_panel(true);
+            panel.set_level(PanelLevel::Floating.value());
+            panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
+            panel.set_has_shadow(true);
+            panel.set_hides_on_deactivate(false);
+            panel.set_collection_behavior(
+                CollectionBehavior::new()
+                    .full_screen_auxiliary()
+                    .can_join_all_spaces()
+                    .into(),
+            );
+        }
+        Err(e) => {
+            eprintln!("thuki: [update] NSPanel conversion failed: {e:?}");
         }
     }
 }
@@ -972,6 +1124,8 @@ pub fn run() {
             init_panel(app.app_handle());
             #[cfg(target_os = "macos")]
             init_settings_panel(app.app_handle());
+            #[cfg(target_os = "macos")]
+            init_update_panel(app.app_handle());
 
             // ── System tray icon + menu ───────────────────────────────────
             // Order chosen for muscle-memory parity with mac tray apps
@@ -999,20 +1153,13 @@ pub fn run() {
                         show_settings_window(app);
                     }
                     "update" => {
-                        // Trigger Install & restart directly from the tray.
-                        // The Settings banner button calls the same shared
-                        // routine through the `install_update` Tauri
-                        // command. Spawn rather than block: tray click
-                        // handlers run synchronously, but the install
-                        // performs network IO and signature verification.
-                        let app_handle = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(e) =
-                                crate::updater::commands::install_update_inner(app_handle).await
-                            {
-                                eprintln!("tray-triggered install failed: {e}");
-                            }
-                        });
+                        // Open the "What's New" window so the user previews
+                        // the release notes and picks an action (Skip /
+                        // Later / Install & Quit / Install & Restart)
+                        // instead of an install starting on a single click.
+                        // The chat footer and Settings banner route through
+                        // the same `open_update_window` command.
+                        show_update_window(app);
                     }
                     "quit" => {
                         app.state::<crate::commands::GenerationState>().cancel();
@@ -1149,6 +1296,10 @@ pub fn run() {
                 // Mirror the on-disk reset marker so click-time decisions
                 // don't have to re-read the sidecar.
                 updater_state.set_last_reset_for_version(sidecar.last_reset_for_version.clone());
+                // Seed the skip list so a version the user dismissed in a
+                // previous session stays suppressed: the very first poll
+                // after launch must already know it is skipped.
+                updater_state.set_skipped_versions(sidecar.skipped_versions.clone());
 
                 // Record the running version BEFORE any potential restart
                 // so the post-restart launch reads a sidecar where the
@@ -1353,6 +1504,12 @@ pub fn run() {
             #[cfg(not(coverage))]
             updater::commands::install_update,
             #[cfg(not(coverage))]
+            updater::commands::install_update_and_quit,
+            #[cfg(not(coverage))]
+            updater::commands::skip_update_version,
+            #[cfg(not(coverage))]
+            updater::commands::open_update_window,
+            #[cfg(not(coverage))]
             updater::commands::snooze_update_chat,
             #[cfg(not(coverage))]
             updater::commands::snooze_update_settings,
@@ -1379,6 +1536,14 @@ pub fn run() {
                     // form values) survives close/reopen.
                     api.prevent_close();
                     if let Some(window) = app_handle.get_webview_window("settings") {
+                        let _ = window.hide();
+                    }
+                } else if label == "update" {
+                    // Hide instead of destroy so the NSPanel handle from
+                    // init_update_panel stays valid for the next open
+                    // (cmd-W and the in-window buttons both close it).
+                    api.prevent_close();
+                    if let Some(window) = app_handle.get_webview_window("update") {
                         let _ = window.hide();
                     }
                 }
