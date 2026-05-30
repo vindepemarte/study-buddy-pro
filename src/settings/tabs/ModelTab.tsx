@@ -12,7 +12,14 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { Section, TextField, Textarea, Toggle } from '../components';
+import {
+  Section,
+  NumberSlider,
+  NumberStepper,
+  TextField,
+  Textarea,
+  Toggle,
+} from '../components';
 import { SaveField } from '../components/SaveField';
 import { useDebouncedSave } from '../hooks/useDebouncedSave';
 import { configHelp } from '../configHelpers';
@@ -397,7 +404,7 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
                 className={styles.ctxVramLink}
                 onClick={() => {
                   void invoke('open_url', {
-                    url: 'https://github.com/quiet-node/thuki/blob/main/docs/tuning-context-window.md#the-5-minute-benchmark-recipe',
+                    url: 'https://github.com/vindepemarte/study-buddy-pro/blob/main/docs/tuning-context-window.md#the-5-minute-benchmark-recipe',
                   });
                 }}
               >
@@ -406,6 +413,153 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
             </span>
           </div>
         </div>
+      </Section>
+
+      <Section heading="Voice">
+        <SaveField
+          section="voice"
+          fieldKey="enabled"
+          label="Enable voice"
+          helper="Use the local Supertonic sidecar for spoken tutor responses."
+          initialValue={config.voice.enabled}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          rightAlign
+          render={(value, setValue) => (
+            <Toggle
+              checked={value}
+              onChange={setValue}
+              ariaLabel="Enable voice"
+            />
+          )}
+        />
+        <SaveField
+          section="voice"
+          fieldKey="auto_speak_study"
+          label="Auto-speak Study Mode"
+          helper="Speak guided study steps, questions, and feedback automatically. Normal chat stays manual."
+          initialValue={config.voice.auto_speak_study}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          rightAlign
+          render={(value, setValue) => (
+            <Toggle
+              checked={value}
+              onChange={setValue}
+              ariaLabel="Auto-speak Study Mode"
+            />
+          )}
+        />
+        <SaveField
+          section="voice"
+          fieldKey="base_url"
+          label="Supertonic URL"
+          helper="Loopback URL for the local Supertonic TTS server."
+          initialValue={config.voice.base_url}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          render={(value, setValue, errored) => (
+            <TextField
+              value={value}
+              onChange={setValue}
+              placeholder="http://127.0.0.1:7788"
+              errored={errored}
+              ariaLabel="Supertonic URL"
+            />
+          )}
+        />
+        <SaveField
+          section="voice"
+          fieldKey="voice"
+          label="Voice"
+          helper="Built-in or imported Supertonic voice name."
+          initialValue={config.voice.voice}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          render={(value, setValue, errored) => (
+            <TextField
+              value={value}
+              onChange={setValue}
+              placeholder="M1"
+              errored={errored}
+              ariaLabel="Voice"
+            />
+          )}
+        />
+        <SaveField
+          section="voice"
+          fieldKey="lang"
+          label="Language"
+          helper='Use "auto" to let Study Buddy Pro infer the spoken language from each response.'
+          initialValue={config.voice.lang}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          render={(value, setValue, errored) => (
+            <TextField
+              value={value}
+              onChange={setValue}
+              placeholder="auto"
+              errored={errored}
+              ariaLabel="Voice language"
+            />
+          )}
+        />
+        <SaveField
+          section="voice"
+          fieldKey="steps"
+          label="Quality steps"
+          helper="Higher values can sound better but take longer."
+          initialValue={config.voice.steps}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          render={(value, setValue) => (
+            <NumberStepper
+              value={value}
+              min={4}
+              max={12}
+              onChange={setValue}
+              ariaLabel="Voice quality steps"
+            />
+          )}
+        />
+        <SaveField
+          section="voice"
+          fieldKey="speed"
+          label="Speed"
+          helper="Spoken speed multiplier."
+          initialValue={config.voice.speed}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          render={(value, setValue) => (
+            <NumberSlider
+              value={value}
+              min={0.7}
+              max={2}
+              step={0.05}
+              onChange={setValue}
+              ariaLabel="Voice speed"
+            />
+          )}
+        />
+        <SaveField
+          section="voice"
+          fieldKey="max_chunk_length"
+          label="Chunk length"
+          helper="Maximum text characters per TTS chunk for long study turns."
+          initialValue={config.voice.max_chunk_length}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          render={(value, setValue) => (
+            <NumberStepper
+              value={value}
+              min={80}
+              max={1000}
+              step={20}
+              onChange={setValue}
+              ariaLabel="Voice chunk length"
+            />
+          )}
+        />
       </Section>
 
       <Section heading="Prompt">

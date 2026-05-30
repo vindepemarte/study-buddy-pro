@@ -43,7 +43,7 @@ export function IntroStep({ onComplete }: Props) {
           src={thukiLogo}
           width={44}
           height={44}
-          alt="Thuki"
+          alt="Study Buddy Pro"
           style={{
             objectFit: 'contain',
             display: 'block',
@@ -64,7 +64,7 @@ export function IntroStep({ onComplete }: Props) {
               margin: '0 0 6px',
             }}
           >
-            {"You're all set"}
+            {'Study Buddy Pro is ready'}
           </h1>
           <p
             style={{
@@ -74,7 +74,7 @@ export function IntroStep({ onComplete }: Props) {
               margin: 0,
             }}
           >
-            {"Five quick tips and you're chatting in seconds."}
+            {'Use it as a tutor that explains, checks, and speaks with you.'}
           </p>
         </div>
 
@@ -88,7 +88,7 @@ export function IntroStep({ onComplete }: Props) {
                 <span>to summon</span>
               </>
             }
-            desc="Press Control twice from any app, any time"
+            desc="Press Control twice from any app, any time."
           />
           <Fact
             icon={<SelectionIcon />}
@@ -97,12 +97,12 @@ export function IntroStep({ onComplete }: Props) {
                 <span>Select text, then double-tap</span> <KeyChip>⌃</KeyChip>
               </>
             }
-            desc="It opens with your selection already quoted as context"
+            desc="It opens with your selection already quoted as study context."
           />
           <Fact
             icon={<ImageIcon />}
-            title="Drop in any image"
-            desc="Paste, drag, or clip a screenshot straight into the conversation."
+            title="Drop in study material"
+            desc="Paste, drag, or clip a screenshot from notes, exercises, or tests."
           />
           <Fact
             icon={<CommandIcon />}
@@ -112,12 +112,12 @@ export function IntroStep({ onComplete }: Props) {
                 <span>for commands</span>
               </>
             }
-            desc="Open the slash menu for built-in tools and writing shortcuts right from the ask bar."
+            desc="Use /study, /quiz, and /vocab for guided learning."
           />
           <Fact
             icon={<FloatIcon />}
-            title="Floats above everything"
-            desc="No app switching, no broken flow. Summon it, use it, toss the chat and get straight back to work."
+            title="Talks during study mode"
+            desc="When Supertonic is running, guided explanations and checks can be spoken aloud."
             last
           />
         </div>

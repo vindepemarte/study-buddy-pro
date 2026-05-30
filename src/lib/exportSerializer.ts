@@ -41,7 +41,7 @@ export interface FileExportContext {
 /**
  * Returns the default filename suggested in the native save dialog.
  *
- * Format: `thuki-chat-YYYY-MM-DD-HHMM.md`. Local timezone (matches
+ * Format: `study-buddy-pro-chat-YYYY-MM-DD-HHMM.md`. Local timezone (matches
  * what the user perceives as "now"). No slug from the first user
  * message so a privacy-sensitive snippet does not become visible in
  * Finder / Spotlight.
@@ -52,7 +52,7 @@ export function defaultExportFilename(now: Date): string {
   const dd = pad2(now.getDate());
   const hh = pad2(now.getHours());
   const mi = pad2(now.getMinutes());
-  return `thuki-chat-${yyyy}-${mm}-${dd}-${hh}${mi}.md`;
+  return `study-buddy-pro-chat-${yyyy}-${mm}-${dd}-${hh}${mi}.md`;
 }
 
 /**
@@ -134,7 +134,7 @@ function buildFrontmatter(
 ): string {
   return [
     '---',
-    `app: ${yamlQuote('Thuki')}`,
+    `app: ${yamlQuote('Study Buddy Pro')}`,
     `model: ${yamlQuote(pickModel(messages, ctx.fallbackModel))}`,
     `exported_at: ${yamlQuote(isoLocal(now))}`,
     `message_count: ${messages.length}`,

@@ -70,7 +70,7 @@ describe('UpdateWindow', () => {
     mockState = BASE;
     render(<UpdateWindow />);
     expect(screen.getByTestId('update-empty')).toHaveTextContent(
-      'Thuki is up to date.',
+      'Study Buddy Pro is up to date.',
     );
   });
 
@@ -78,7 +78,7 @@ describe('UpdateWindow', () => {
     mockState = withUpdate({ body: '## Fixed\n\n- a crash' });
     render(<UpdateWindow />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      'A new version of Thuki is available!',
+      'A new version of Study Buddy Pro is available!',
     );
     // Subline gains the "· you have X" clause once getVersion resolves.
     await screen.findByText('Version 0.11.0 · you have 0.10.0');
@@ -189,7 +189,7 @@ describe('UpdateWindow', () => {
     mockState = withUpdate({ body: 'x' });
     render(<UpdateWindow />);
     fireEvent.mouseDown(
-      screen.getByText('A new version of Thuki is available!'),
+      screen.getByText('A new version of Study Buddy Pro is available!'),
       { button: 0 },
     );
     expect(__mockWindow.startDragging).not.toHaveBeenCalled();

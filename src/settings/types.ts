@@ -46,6 +46,17 @@ export interface RawAppConfig {
     reader_batch_timeout_s: number;
     judge_timeout_s: number;
     router_timeout_s: number;
+    pipeline_wall_clock_budget_s: number;
+  };
+  voice: {
+    enabled: boolean;
+    auto_speak_study: boolean;
+    base_url: string;
+    voice: string;
+    lang: string;
+    steps: number;
+    speed: number;
+    max_chunk_length: number;
   };
   debug: {
     trace_enabled: boolean;
@@ -90,7 +101,7 @@ export function describeConfigError(err: unknown): string {
     case 'type_mismatch':
       return e.message ?? 'Wrong type for this field.';
     case 'parse':
-      return 'config.toml has a syntax error. Restart Thuki to recover.';
+      return 'config.toml has a syntax error. Restart Study Buddy Pro to recover.';
     case 'seed_failed':
       return `Couldn’t write defaults: ${e.source ?? ''}.`;
     default:

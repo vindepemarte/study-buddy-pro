@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "thuki",
+      "name": "study-buddy-pro",
       "dependencies": {
         "@fontsource/nunito": "^5.2.7",
         "@tauri-apps/api": "^2.11.0",

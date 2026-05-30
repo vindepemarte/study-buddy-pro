@@ -6,7 +6,7 @@ describe('configHelp', () => {
   it('returns the doc-mirrored helper string for every section', () => {
     // One probe per section is enough to exercise the typed lookup branches.
     expect(configHelp('inference', 'ollama_url')).toMatch(/Ollama server/);
-    expect(configHelp('prompt', 'system')).toMatch(/custom personality/);
+    expect(configHelp('prompt', 'system')).toMatch(/custom tutor/);
     expect(configHelp('window', 'overlay_width')).toMatch(/in pixels/);
     expect(configHelp('quote', 'max_display_lines')).toMatch(
       /lines of the quoted/,

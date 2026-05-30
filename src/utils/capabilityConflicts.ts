@@ -8,7 +8,7 @@ import type { ModelCapabilities } from '../types/model';
  * have the repo checked out locally.
  */
 export const OCR_COMMANDS_DOC_URL =
-  'https://github.com/quiet-node/thuki/blob/main/docs/ocr-commands.md';
+  'https://github.com/vindepemarte/study-buddy-pro/blob/main/docs/ocr-commands.md';
 
 /**
  * Discriminated message shape consumed by `CapabilityMismatchStrip`. Most
@@ -84,7 +84,7 @@ const EMPTY_HISTORY_STATE: HistoryCapabilityState = {
  * App.tsx can route through one symbol per state.
  */
 export const NO_MODELS_INSTALLED_MESSAGE =
-  "Thuki couldn't find any local LLM models. Pull one from Ollama with `ollama pull <model>`, then come back.";
+  "Study Buddy Pro couldn't find any local LLM models. Pull one from Ollama with `ollama pull <model>`, then come back.";
 
 /**
  * Copy used when the local Ollama daemon cannot be reached (connection

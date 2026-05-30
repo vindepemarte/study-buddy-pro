@@ -8,7 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
  */
 export function SandboxSetupCard() {
   const SETUP_URL =
-    'https://github.com/quiet-node/thuki/blob/main/docs/agentic-search.md#setup';
+    'https://github.com/vindepemarte/study-buddy-pro/blob/main/docs/agentic-search.md#setup';
 
   const handleOpenGuide = () => {
     void invoke('open_url', { url: SETUP_URL });

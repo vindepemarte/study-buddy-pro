@@ -180,7 +180,7 @@ describe('useUpdater', () => {
     const { result } = renderHook(() => useUpdater());
     await waitFor(() =>
       expect(result.current.state.update?.notes_url).toBe(
-        'https://github.com/quiet-node/thuki/releases/tag/v0.8.0',
+        'https://github.com/vindepemarte/study-buddy-pro/releases/tag/v0.8.0',
       ),
     );
   });
@@ -209,7 +209,7 @@ describe('useUpdater', () => {
     });
     await waitFor(() =>
       expect(result.current.state.update?.notes_url).toBe(
-        'https://github.com/quiet-node/thuki/releases/tag/v0.8.0',
+        'https://github.com/vindepemarte/study-buddy-pro/releases/tag/v0.8.0',
       ),
     );
   });
@@ -226,7 +226,7 @@ describe('useUpdater', () => {
       await result.current.checkNow();
     });
     expect(result.current.state.update?.notes_url).toBe(
-      'https://github.com/quiet-node/thuki/releases/tag/v0.8.0',
+      'https://github.com/vindepemarte/study-buddy-pro/releases/tag/v0.8.0',
     );
   });
 });

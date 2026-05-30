@@ -64,6 +64,17 @@ const CONFIG: RawAppConfig = {
     reader_batch_timeout_s: 30,
     judge_timeout_s: 30,
     router_timeout_s: 45,
+    pipeline_wall_clock_budget_s: 90,
+  },
+  voice: {
+    enabled: true,
+    auto_speak_study: true,
+    base_url: 'http://127.0.0.1:7788',
+    voice: 'M1',
+    lang: 'auto',
+    steps: 8,
+    speed: 1.05,
+    max_chunk_length: 300,
   },
   debug: {
     trace_enabled: false,
@@ -478,7 +489,7 @@ describe('ModelTab', () => {
     });
     fireEvent.click(tuneButton);
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://github.com/quiet-node/thuki/blob/main/docs/tuning-context-window.md#the-5-minute-benchmark-recipe',
+      url: 'https://github.com/vindepemarte/study-buddy-pro/blob/main/docs/tuning-context-window.md#the-5-minute-benchmark-recipe',
     });
   });
 
@@ -764,10 +775,10 @@ describe('AboutTab', () => {
 
   it('renders the centered hero with title, version, and tagline', async () => {
     await renderAbout();
-    expect(screen.getByText('Thuki')).toBeInTheDocument();
-    expect(screen.getByText(/A floating, local-first AI/)).toBeInTheDocument();
+    expect(screen.getByText('Study Buddy Pro')).toBeInTheDocument();
+    expect(screen.getByText(/local-first study buddy/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/No cloud\. No clutter\. Just answers\./),
+      screen.getByText(/Understand first\. Practice next\. Remember longer\./),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getAllByText(/Granted/).length).toBeGreaterThan(0),
@@ -799,7 +810,7 @@ describe('AboutTab', () => {
       screen.getByRole('button', { name: /release notes on GitHub/ }),
     );
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://github.com/quiet-node/thuki/releases/tag/nightly',
+      url: 'https://github.com/vindepemarte/study-buddy-pro/releases/tag/nightly',
     });
     vi.unstubAllEnvs();
   });
@@ -807,20 +818,18 @@ describe('AboutTab', () => {
   it('GitHub icon button opens the repo', async () => {
     await renderAbout();
     fireEvent.click(
-      screen.getByRole('button', { name: 'View Thuki on GitHub' }),
+      screen.getByRole('button', { name: 'View Study Buddy Pro on GitHub' }),
     );
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://github.com/quiet-node/thuki',
+      url: 'https://github.com/vindepemarte/study-buddy-pro',
     });
   });
 
-  it('X icon button opens @quiet_node', async () => {
+  it('second link button opens GitHub Issues', async () => {
     await renderAbout();
-    fireEvent.click(
-      screen.getByRole('button', { name: /Reach out to Logan on X/ }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: /questions or ideas/ }));
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://x.com/quiet_node',
+      url: 'https://github.com/vindepemarte/study-buddy-pro/issues',
     });
   });
 
@@ -828,23 +837,29 @@ describe('AboutTab', () => {
     await renderAbout();
     fireEvent.click(screen.getByRole('button', { name: /Open an issue/ }));
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://github.com/quiet-node/thuki/issues',
+      url: 'https://github.com/vindepemarte/study-buddy-pro/issues',
     });
   });
 
-  it('Globe icon button opens thuki.app', async () => {
+  it('Globe icon button opens the repository', async () => {
     await renderAbout();
-    fireEvent.click(screen.getByRole('button', { name: /Visit thuki.app/ }));
-    expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://www.thuki.app/',
-    });
-  });
-
-  it('Reveal Thuki app data invokes reveal_config_in_finder', async () => {
-    await renderAbout();
-    await waitFor(() => screen.getByText(/Reveal Thuki app data/));
     fireEvent.click(
-      screen.getByRole('button', { name: /Reveal Thuki app data/ }),
+      screen.getByRole('button', {
+        name: /Open the Study Buddy Pro repository/,
+      }),
+    );
+    expect(invokeMock).toHaveBeenCalledWith('open_url', {
+      url: 'https://github.com/vindepemarte/study-buddy-pro',
+    });
+  });
+
+  it('Reveal Study Buddy Pro app data invokes reveal_config_in_finder', async () => {
+    await renderAbout();
+    await waitFor(() => screen.getByText(/Reveal Study Buddy Pro app data/));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /Reveal Study Buddy Pro app data/,
+      }),
     );
     expect(invokeMock).toHaveBeenCalledWith('reveal_config_in_finder');
   });

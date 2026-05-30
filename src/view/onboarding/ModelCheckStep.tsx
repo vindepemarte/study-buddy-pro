@@ -44,6 +44,11 @@ function formatListenAddr(url: string): string {
 type ModelSetupState =
   | { state: 'ollama_unreachable' }
   | { state: 'no_models_installed' }
+  | {
+      state: 'missing_required_model';
+      required_slug: string;
+      installed: string[];
+    }
   | { state: 'ready'; active_slug: string; installed: string[] };
 
 interface InstallTab {
@@ -57,18 +62,35 @@ interface InstallTab {
  * default selection. `command` is the exact string copied to the
  * clipboard when the copy pill is clicked.
  */
-const INSTALL_TABS: InstallTab[] = [
-  {
-    id: 'install',
-    label: 'Install Ollama',
-    command: 'curl -fsSL https://ollama.com/install.sh | sh',
-  },
-  {
-    id: 'already-installed',
-    label: 'Already Installed?',
-    command: 'open -a Ollama',
-  },
-];
+const IS_WINDOWS =
+  typeof navigator !== 'undefined' &&
+  /Windows|Win32|Win64/i.test(`${navigator.userAgent} ${navigator.platform}`);
+
+const INSTALL_TABS: InstallTab[] = IS_WINDOWS
+  ? [
+      {
+        id: 'install',
+        label: 'Install Ollama',
+        command: 'winget install --id Ollama.Ollama -e',
+      },
+      {
+        id: 'already-installed',
+        label: 'Already Installed?',
+        command: 'ollama serve',
+      },
+    ]
+  : [
+      {
+        id: 'install',
+        label: 'Install Ollama',
+        command: 'curl -fsSL https://ollama.com/install.sh | sh',
+      },
+      {
+        id: 'already-installed',
+        label: 'Already Installed?',
+        command: 'open -a Ollama',
+      },
+    ];
 
 /**
  * Starter models offered in Step 2. All entries support text and image
@@ -81,15 +103,29 @@ const STARTER_MODELS: Array<{
   slug: string;
   description: string;
   size: string;
-}> = [
-  { slug: 'gemma4:e4b', description: 'Google · vision', size: '9.6 GB' },
-  {
-    slug: 'llama3.2-vision:11b',
-    description: 'Meta · vision',
-    size: '7.8 GB',
-  },
-  { slug: 'phi4:14b', description: 'Microsoft · text', size: '9.1 GB' },
-];
+}> = IS_WINDOWS
+  ? [
+      {
+        slug: 'gemma4:e2b',
+        description: 'Google · vision OCR',
+        size: 'required',
+      },
+      { slug: 'gemma4:e4b', description: 'Google · vision', size: '9.6 GB' },
+      {
+        slug: 'llama3.2-vision:11b',
+        description: 'Meta · vision',
+        size: '7.8 GB',
+      },
+    ]
+  : [
+      { slug: 'gemma4:e4b', description: 'Google · vision', size: '9.6 GB' },
+      {
+        slug: 'llama3.2-vision:11b',
+        description: 'Meta · vision',
+        size: '7.8 GB',
+      },
+      { slug: 'phi4:14b', description: 'Microsoft · text', size: '9.1 GB' },
+    ];
 
 /**
  * Builds the public Ollama library URL for a model slug. Drops the `:tag`
@@ -154,15 +190,19 @@ export function ModelCheckStep() {
     }
   }, [probe]);
 
-  const ollamaConnected = setupState?.state === 'no_models_installed';
+  const ollamaConnected =
+    setupState?.state === 'no_models_installed' ||
+    setupState?.state === 'missing_required_model';
   const isWaitingForOllama = setupState?.state === 'ollama_unreachable';
   const isProbing = setupState === null;
 
   const titleSub = isProbing
     ? 'Checking your local Ollama setup…'
     : ollamaConnected
-      ? "Almost there. Let's pick a brain for Thuki."
-      : 'Runs Ollama locally. Your chats stay on this machine.';
+      ? setupState?.state === 'missing_required_model'
+        ? `Almost there. Pull ${setupState.required_slug} for Windows OCR.`
+        : "Almost there. Let's pick a local model."
+      : 'Runs Ollama locally. Your study sessions stay on this machine.';
 
   return (
     <div
@@ -212,7 +252,7 @@ export function ModelCheckStep() {
             src={thukiLogo}
             width={40}
             height={40}
-            alt="Thuki"
+            alt="Study Buddy Pro"
             style={{
               objectFit: 'contain',
               pointerEvents: 'none',

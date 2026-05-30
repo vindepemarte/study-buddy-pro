@@ -158,6 +158,66 @@ pub fn quit_and_relaunch(app_handle: tauri::AppHandle, db: tauri::State<crate::h
     app_handle.restart();
 }
 
+// ─── Non-macOS command shims ────────────────────────────────────────────────
+
+/// Windows does not require Accessibility permission for the chosen
+/// Ctrl+Space activator path.
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn check_accessibility_permission() -> bool {
+    true
+}
+
+/// Non-macOS platforms do not expose the macOS Accessibility privacy pane.
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn open_accessibility_settings() -> Result<(), String> {
+    Ok(())
+}
+
+/// Windows screen capture does not use macOS Screen Recording permission.
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn check_screen_recording_permission() -> bool {
+    true
+}
+
+/// Non-macOS platforms do not expose the macOS Screen Recording privacy pane.
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn open_screen_recording_settings() -> Result<(), String> {
+    Ok(())
+}
+
+/// No-op counterpart to the macOS TCC prompt registration.
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn request_screen_recording_access() {}
+
+/// Non-macOS screen capture is not gated by macOS TCC.
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn check_screen_recording_tcc_granted() -> bool {
+    true
+}
+
+/// Keeps the existing frontend action harmless on Windows/Linux.
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn quit_and_relaunch(app_handle: tauri::AppHandle, db: tauri::State<crate::history::Database>) {
+    if let Ok(conn) = db.0.lock() {
+        let _ = crate::onboarding::set_stage(&conn, &crate::onboarding::OnboardingStage::Intro);
+    }
+    app_handle.restart();
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

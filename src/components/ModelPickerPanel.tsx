@@ -16,7 +16,7 @@ export const OLLAMA_LIBRARY_URL = 'https://ollama.com/library';
  * the full sentence in one read.
  */
 export const OLLAMA_PILL_TOOLTIP =
-  'Browse and pull any model on Ollama. Thuki auto-detects it.';
+  'Browse and pull any model on Ollama. Study Buddy Pro auto-detects it.';
 
 const CHECK_ICON_PATH = (
   <path

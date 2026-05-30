@@ -1,9 +1,9 @@
 //! Application configuration module.
 //!
-//! This module is the single source of truth for Thuki's runtime configuration.
+//! This module is the single source of truth for Study Buddy Pro's runtime configuration.
 //! Every subsystem reads resolved values from a Tauri-managed `AppConfig`
 //! state. Compiled defaults live in `defaults`; the on-disk file at
-//! `~/Library/Application Support/com.quietnode.thuki/config.toml` overlays
+//! the app-specific OS config directory overlays
 //! user customizations on top.
 //!
 //! ## Public surface
@@ -25,7 +25,9 @@ pub mod writer;
 
 pub use error::ConfigError;
 pub use loader::load_from_path;
-pub use schema::{AppConfig, InferenceSection, PromptSection, QuoteSection, WindowSection};
+pub use schema::{
+    AppConfig, InferenceSection, PromptSection, QuoteSection, VoiceSection, WindowSection,
+};
 pub use writer::{atomic_write, atomic_write_bytes};
 
 /// File name of the user config file inside the OS config dir.
@@ -102,12 +104,12 @@ pub fn load(app: &tauri::AppHandle) -> Result<AppConfig, ConfigError> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn show_fatal_dialog_and_exit(err: &ConfigError) -> ! {
     let raw = format!(
-        "Thuki could not start because of a configuration error.\n\n{err}\n\nCheck write permissions on ~/Library/Application Support/"
+        "Study Buddy Pro could not start because of a configuration error.\n\n{err}\n\nCheck write permissions on the app data directory."
     );
     // Escape quotes and backslashes for AppleScript string literal.
     let escaped = raw.replace('\\', "\\\\").replace('"', "\\\"");
     let script = format!(
-        "display alert \"Thuki\" message \"{escaped}\" as critical buttons {{\"Quit\"}} default button \"Quit\""
+        "display alert \"Study Buddy Pro\" message \"{escaped}\" as critical buttons {{\"Quit\"}} default button \"Quit\""
     );
     let _ = std::process::Command::new("osascript")
         .arg("-e")

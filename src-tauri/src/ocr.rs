@@ -12,6 +12,24 @@
  * over Vision framework; require Screen Recording permission and a display).
  */
 
+#[cfg(target_os = "windows")]
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+#[cfg(target_os = "windows")]
+use parking_lot::RwLock;
+#[cfg(target_os = "windows")]
+use serde::Deserialize;
+#[cfg(target_os = "windows")]
+use tauri::State;
+
+#[cfg(target_os = "windows")]
+use crate::config::AppConfig;
+
+/// Default local vision model used for OCR on Windows NSIS builds.
+///
+/// We deliberately do not use `Windows.Media.Ocr` in the private unsigned
+/// installer path because Microsoft's API requires package identity/MSIX.
+pub const WINDOWS_OCR_MODEL: &str = "gemma4:e2b";
+
 // ─── Pure testable helpers ───────────────────────────────────────────────────
 
 /// Converts a raw OCR string into a non-empty result, or `None` when blank.
@@ -30,6 +48,16 @@ pub fn join_ocr_results(parts: Vec<String>) -> String {
         "[No text detected]".to_string()
     } else {
         parts.join("\n\n---\n\n")
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn strip_ollama_ocr_response(raw: String) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("[no text detected]") {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 
@@ -160,6 +188,85 @@ pub async fn extract_text_command(image_paths: Vec<String>) -> Result<String, St
     extract_text_from_paths(&image_paths)
 }
 
+// ─── Ollama vision OCR (Windows NSIS path) ──────────────────────────────────
+
+#[cfg(target_os = "windows")]
+#[derive(Deserialize)]
+struct OllamaGenerateResponse {
+    response: String,
+}
+
+#[cfg(target_os = "windows")]
+#[cfg_attr(coverage_nightly, coverage(off))]
+async fn extract_text_with_ollama(
+    client: &reqwest::Client,
+    base_url: &str,
+    image_paths: &[String],
+) -> Result<String, String> {
+    let mut parts = Vec::new();
+    let url = format!("{}/api/generate", base_url.trim_end_matches('/'));
+
+    for path in image_paths {
+        let bytes = std::fs::read(path)
+            .map_err(|e| format!("failed to read image for OCR ({path}): {e}"))?;
+        let image = BASE64.encode(bytes);
+        let payload = serde_json::json!({
+            "model": WINDOWS_OCR_MODEL,
+            "stream": false,
+            "prompt": "Extract all visible text from this image verbatim. Preserve line breaks where useful. Do not summarize, correct, translate, or explain. If there is no readable text, answer exactly: [No text detected]",
+            "images": [image],
+        });
+
+        let response = client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| format!("failed to run Windows OCR model {WINDOWS_OCR_MODEL}: {e}"))?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "Windows OCR model {WINDOWS_OCR_MODEL} returned HTTP {}. Run `ollama pull {WINDOWS_OCR_MODEL}` and try again.",
+                response.status()
+            ));
+        }
+
+        let body = response
+            .json::<OllamaGenerateResponse>()
+            .await
+            .map_err(|e| format!("invalid OCR model response: {e}"))?;
+        if let Some(text) = strip_ollama_ocr_response(body.response) {
+            parts.push(text);
+        }
+    }
+
+    Ok(join_ocr_results(parts))
+}
+
+/// Extracts text from one or more image files using the local Windows OCR
+/// model. The frontend command shape matches macOS: only `image_paths` is
+/// supplied by IPC; Tauri injects the HTTP client and config state.
+#[cfg(target_os = "windows")]
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[tauri::command]
+pub async fn extract_text_command(
+    image_paths: Vec<String>,
+    client: State<'_, reqwest::Client>,
+    app_config: State<'_, RwLock<AppConfig>>,
+) -> Result<String, String> {
+    let base_url = app_config.read().inference.ollama_url.clone();
+    extract_text_with_ollama(&client, &base_url, &image_paths).await
+}
+
+/// Linux is not a first-class beta target yet. Keep the command registered so
+/// the crate compiles, but return an explicit unsupported error.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[tauri::command]
+pub async fn extract_text_command(_image_paths: Vec<String>) -> Result<String, String> {
+    Err("OCR is only implemented for macOS and Windows beta builds.".to_string())
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -217,5 +324,18 @@ mod tests {
     fn join_ocr_results_joins_three_parts() {
         let result = join_ocr_results(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
         assert_eq!(result, "a\n\n---\n\nb\n\n---\n\nc".to_string());
+    }
+
+    #[test]
+    fn strip_ollama_ocr_response_handles_empty_and_no_text() {
+        assert_eq!(strip_ollama_ocr_response("   ".to_string()), None);
+        assert_eq!(
+            strip_ollama_ocr_response("[No text detected]".to_string()),
+            None
+        );
+        assert_eq!(
+            strip_ollama_ocr_response(" hello ".to_string()),
+            Some("hello".to_string())
+        );
     }
 }

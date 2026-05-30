@@ -13,7 +13,8 @@ beforeEach(() => {
 describe('UpdateFooterBar', () => {
   const baseProps = {
     version: '0.8.0',
-    notesUrl: 'https://github.com/quiet-node/thuki/releases/tag/v0.8.0',
+    notesUrl:
+      'https://github.com/vindepemarte/study-buddy-pro/releases/tag/v0.8.0',
     onInstall: vi.fn(),
     onLater: vi.fn(),
   };
@@ -42,7 +43,7 @@ describe('UpdateFooterBar', () => {
     render(<UpdateFooterBar {...baseProps} />);
     fireEvent.click(screen.getByText('v0.8.0'));
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://github.com/quiet-node/thuki/releases/tag/v0.8.0',
+      url: 'https://github.com/vindepemarte/study-buddy-pro/releases/tag/v0.8.0',
     });
   });
 

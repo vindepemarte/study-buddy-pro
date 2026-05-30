@@ -41,7 +41,7 @@ export const MinimizedIcon = memo(function MinimizedIcon({
   return (
     <button
       type="button"
-      aria-label="Restore Thuki"
+      aria-label="Restore Study Buddy Pro"
       className="flex w-full h-full items-center justify-center cursor-pointer select-none bg-transparent p-0 border-0"
       onPointerDown={(e) => {
         downPosRef.current = { x: e.clientX, y: e.clientY };
@@ -72,7 +72,7 @@ export const MinimizedIcon = memo(function MinimizedIcon({
         {/* Thuki logo: bare 48px natural shape, no background, no rounded crop. */}
         <img
           src="/thuki-logo.png"
-          alt="Thuki"
+          alt="Study Buddy Pro"
           className={`w-12 h-12${logoMotion}`}
           draggable={false}
         />

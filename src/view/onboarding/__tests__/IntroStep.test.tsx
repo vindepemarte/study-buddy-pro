@@ -10,13 +10,15 @@ describe('IntroStep', () => {
 
   it('renders the title', () => {
     render(<IntroStep onComplete={vi.fn()} />);
-    expect(screen.getByText("You're all set")).toBeInTheDocument();
+    expect(screen.getByText('Study Buddy Pro is ready')).toBeInTheDocument();
   });
 
   it('renders the subtitle', () => {
     render(<IntroStep onComplete={vi.fn()} />);
     expect(
-      screen.getByText("Five quick tips and you're chatting in seconds."),
+      screen.getByText(
+        'Use it as a tutor that explains, checks, and speaks with you.',
+      ),
     ).toBeInTheDocument();
   });
 
@@ -27,18 +29,16 @@ describe('IntroStep', () => {
     expect(
       screen.getByText('Select text, then double-tap'),
     ).toBeInTheDocument();
-    expect(screen.getByText('Drop in any image')).toBeInTheDocument();
+    expect(screen.getByText('Drop in study material')).toBeInTheDocument();
     expect(screen.getByText('for commands')).toBeInTheDocument();
-    expect(screen.getByText('Floats above everything')).toBeInTheDocument();
+    expect(screen.getByText('Talks during study mode')).toBeInTheDocument();
   });
 
   it('renders generic slash command guidance', () => {
     render(<IntroStep onComplete={vi.fn()} />);
     expect(screen.getByText('/')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Open the slash menu for built-in tools and writing shortcuts right from the ask bar.',
-      ),
+      screen.getByText('Use /study, /quiz, and /vocab for guided learning.'),
     ).toBeInTheDocument();
   });
 

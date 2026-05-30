@@ -316,7 +316,9 @@ export function ChatBubble({
 }: ChatBubbleProps) {
   const isUser = role === 'user';
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  const quote = useConfig().quote;
+  const config = useConfig();
+  const quote = config.quote;
+  const [isSpeaking, setIsSpeaking] = useState(false);
   // Render-time defense for legacy assistant content that may carry
   // special turn-boundary tokens leaked by older Ollama versions or
   // mis-tuned models. Backend now strips these on write, so the scrub is
@@ -387,6 +389,18 @@ export function ChatBubble({
     // `data-url` is always set when we build citation anchors in wrapCitations,
     // so the non-null assertion is safe.
     void invoke('open_url', { url: target.getAttribute('data-url')! });
+  };
+
+  const handleSpeakToggle = () => {
+    if (isSpeaking) {
+      void invoke('stop_speech');
+      setIsSpeaking(false);
+      return;
+    }
+    setIsSpeaking(true);
+    void invoke('speak_text', { text: displayContent }).finally(() => {
+      setTimeout(() => setIsSpeaking(false), 800);
+    });
   };
 
   return (
@@ -544,6 +558,16 @@ export function ChatBubble({
               <div className="shrink-0">
                 <CopyButton content={displayContent} align="left" />
               </div>
+              {config.voice.enabled && displayContent.trim() ? (
+                <button
+                  type="button"
+                  onClick={handleSpeakToggle}
+                  aria-label={isSpeaking ? 'Stop speaking' : 'Speak response'}
+                  className="text-[11px] text-white/45 hover:text-white/75 transition-colors"
+                >
+                  {isSpeaking ? 'Stop' : 'Speak'}
+                </button>
+              ) : null}
               {searchSources && searchSources.length > 0 && (
                 <button
                   type="button"

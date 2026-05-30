@@ -67,7 +67,7 @@ export const COMMANDS: readonly Command[] = [
         '`/search latest React 19 release notes`: retrieves recent release information from the web',
       ],
       behavior:
-        "Routes the message through Thuki's local search pipeline instead of plain chat. Answers are grounded in retrieved web sources and typically include inline citations plus a Sources footer.",
+        "Routes the message through Study Buddy Pro's local search pipeline instead of plain chat. Answers are grounded in retrieved web sources and typically include inline citations plus a Sources footer.",
       limit:
         'Requires the search sandbox to be running. See [agentic-search.md#setup](agentic-search.md#setup) for setup steps. Use it for current, changing, or cutoff-sensitive information.',
     },
@@ -85,18 +85,18 @@ export const COMMANDS: readonly Command[] = [
     description: 'Extract all text from screenshots or attached images',
     docs: {
       summary:
-        'Extracts all visible text from screenshots or attached images using macOS Vision OCR.',
+        'Extracts all visible text from screenshots or attached images using the platform local OCR path.',
       usage: '/extract [optional message]',
       examples: [
         '`/extract` with an attached image: extracts all text from the image',
         '`/screen /extract`: captures the screen and extracts all visible text',
       ],
       behavior:
-        'Text is extracted using the macOS Vision framework and returned verbatim in a code block. No prose or explanation is added. When multiple images are provided, each result is separated by a horizontal rule. Returns "[No text detected]" when no readable text is found.',
+        'Text is extracted locally and returned verbatim in a code block. macOS uses Vision OCR; Windows beta uses the local `gemma4:e2b` Ollama vision model. No prose or explanation is added. When multiple images are provided, each result is separated by a horizontal rule. Returns "[No text detected]" when no readable text is found.',
       composability:
         '`/extract` can combine with `/screen` to capture then extract in one step.',
       permission:
-        'Uses the same Screen Recording permission as `/screen` when combined with it.',
+        'Uses the same `/screen` capture requirements when combined with it. macOS requires Screen Recording permission; Windows does not.',
     },
     promptHelp: {
       summary:
@@ -120,20 +120,20 @@ export const COMMANDS: readonly Command[] = [
         '`/screen what is this error?`: attaches a screenshot and asks a question about it',
       ],
       behavior:
-        "The screenshot is taken when you submit the message. Thuki's own window is excluded from the capture, and the image appears in your message bubble like a pasted screenshot.",
+        "The screenshot is taken when you submit the message. Study Buddy Pro's own window is excluded from the capture, and the image appears in your message bubble like a pasted screenshot.",
       composability:
         '`/screen` can combine with `/think` and utility commands. For example, `/screen /rewrite` captures the screen and rewrites whatever text the model can see.',
       limit:
         'One `/screen` capture per message. You may also attach up to 3 images manually for a total of 4 images per message.',
       permission:
-        'Requires Screen Recording permission. If denied, Thuki cannot capture the screen until access is granted in System Settings.',
+        'macOS requires Screen Recording permission. Windows beta captures through the local desktop APIs without a Screen Recording permission prompt.',
     },
     promptHelp: {
       summary: 'capture current screen and attach it as image context.',
       composition:
         'Can combine with `/think` and utility commands in the same message.',
       limit:
-        'One `/screen` capture per message and it requires Screen Recording permission.',
+        'One `/screen` capture per message. macOS requires Screen Recording permission; Windows beta does not.',
     },
   },
   {
@@ -156,6 +156,76 @@ export const COMMANDS: readonly Command[] = [
       summary: 'enable extended reasoning before answering.',
       composition: 'Can combine with `/screen` and utility commands.',
     },
+  },
+  {
+    trigger: '/study',
+    label: '/study',
+    description: 'Start guided study mode for this material',
+    docs: {
+      summary:
+        'Starts a step-by-step tutoring session from typed text, highlighted text, or OCR context.',
+      usage: '/study [material or question]',
+      examples: [
+        '`/study I cannot understand photosynthesis`: starts a guided explanation with checks',
+        '`/screen /study`: captures the screen and studies what is visible',
+      ],
+      behavior:
+        'Explains one small concept, asks a check question, adapts from the answer, and tracks learning locally.',
+      composability:
+        '`/study` works with `/screen` and attached images through local OCR.',
+    },
+    promptHelp: {
+      summary:
+        'start guided study mode: explain one step at a time, ask checks, adapt from mistakes, and avoid generic dumps.',
+    },
+    promptTemplate:
+      'Start guided Study Mode for the material below. Diagnose what the student is struggling with, explain only the first small step, then ask one short check question. If a difficult word is blocking understanding, begin the vocabulary mastery loop. Keep the response short enough to speak aloud.\n\nMaterial: $INPUT',
+  },
+  {
+    trigger: '/quiz',
+    label: '/quiz',
+    description: 'Quiz the student on the current material',
+    docs: {
+      summary: 'Creates a short adaptive quiz from the current material.',
+      usage: '/quiz [topic or material]',
+      examples: [
+        '`/quiz fractions`: asks one question at a time',
+        '`/screen /quiz`: quizzes from the visible page or exercise',
+      ],
+      behavior:
+        'Asks one question, waits for the student response, then grades and explains the mistake or next step.',
+      composability:
+        '`/quiz` works with `/screen` and attached images through local OCR.',
+    },
+    promptHelp: {
+      summary:
+        'quiz the student one question at a time, grade the answer, explain mistakes, and adapt difficulty.',
+    },
+    promptTemplate:
+      'Start a one-question adaptive quiz on the material below. Ask exactly one question now. Do not reveal the answer until the student attempts it.\n\nMaterial: $INPUT',
+  },
+  {
+    trigger: '/vocab',
+    label: '/vocab',
+    description: 'Practice difficult words until mastered',
+    docs: {
+      summary: 'Starts the vocabulary mastery loop for difficult words.',
+      usage: '/vocab [word or material]',
+      examples: [
+        '`/vocab photosynthesis`: teaches definitions through original sentences',
+        '`/screen /vocab`: extracts difficult words from the visible material',
+      ],
+      behavior:
+        'Teaches one definition at a time, asks for original sentences, requires 3-5 correct uses, then explains etymology.',
+      composability:
+        '`/vocab` works with `/screen` and attached images through local OCR.',
+    },
+    promptHelp: {
+      summary:
+        'teach difficult words through definitions, original student sentences, adaptive 3-5 sentence mastery, and etymology.',
+    },
+    promptTemplate:
+      'Start the vocabulary mastery loop for the material below. Pick the first difficult word or term, give only the first plain-language definition, then ask the student for one original sentence using that definition. Do not move to another definition until mastery is shown.\n\nMaterial: $INPUT',
   },
   {
     trigger: '/translate',

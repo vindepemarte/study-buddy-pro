@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Thuki",
-  "version": "0.13.1",
-  "identifier": "com.quietnode.thuki",
+  "productName": "Study Buddy Pro",
+  "version": "0.14.0",
+  "identifier": "com.vindepemarte.studybuddypro",
   "build": {
     "beforeDevCommand": "bun run frontend:dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Thuki",
+        "title": "Study Buddy Pro",
         "width": 600,
         "height": 700,
         "resizable": true,
@@ -26,7 +26,7 @@
       },
       {
         "label": "settings",
-        "title": "Thuki Settings",
+        "title": "Study Buddy Pro Settings",
         "url": "index.html#/settings",
         "width": 580,
         "height": 520,
@@ -80,20 +80,36 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "homepage": "https://www.thuki.app/",
+    "homepage": "https://github.com/vindepemarte/study-buddy-pro",
+    "resources": [
+      "resources/supertonic/**/*",
+      "resources/search-box/**/*"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English"
+        ]
+      }
+    }
   },
   "plugins": {
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/quiet-node/thuki/releases/latest/download/latest.json"
+        "https://github.com/vindepemarte/study-buddy-pro/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwQjZFQTM0M0I3Q0E1QzEKUldUQnBYdzdOT3EyVUdxMEFQTEhVdjFWbEZZbi84LzJZMVZheXB2WUs3eTBEMUhsdUR5SUVXVy8K",
       "windows": {

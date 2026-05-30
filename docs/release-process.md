@@ -1,4 +1,21 @@
-# Releasing Thuki
+# Releasing Study Buddy Pro
+
+## Windows private beta
+
+Windows beta builds are unsigned NSIS installers. Build them on Windows with:
+
+```bash
+bun run build:windows
+```
+
+The installer is expected to trigger SmartScreen until a code-signing certificate is added. Runtime state survives reinstall, so when testing Supertonic/search installer changes, clear:
+
+```powershell
+Remove-Item "$env:LOCALAPPDATA\\com.vindepemarte.studybuddypro\\supertonic" -Recurse -Force
+Remove-Item "$env:LOCALAPPDATA\\com.vindepemarte.studybuddypro\\search-box" -Recurse -Force
+```
+
+Windows runtime prerequisites for the beta are Ollama, Python 3.11/3.12, and `ollama pull gemma4:e2b` for OCR. Docker Desktop is optional and only needed for `/search`.
 
 Thuki ships signed updates to existing installs through the bundled Tauri updater. Releases are fully automated: the GitHub Actions workflow builds, signs, and publishes everything when a release-please PR merges.
 

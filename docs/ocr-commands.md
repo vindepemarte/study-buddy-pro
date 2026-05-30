@@ -1,33 +1,33 @@
 # OCR-Supported Commands
 
-Thuki has a class of slash commands that read text out of attached images locally using the **macOS Vision framework**. No network calls, no LLM round-trip, and crucially: **no vision-capable model required**. The OCR engine extracts text on-device; the resulting text is what the active model sees.
+Study Buddy Pro has a class of slash commands that read text out of attached images locally before sending plain text to the active model. On macOS this uses the **macOS Vision framework**. On Windows beta this uses local Ollama vision model `gemma4:e2b`.
 
-See [thuki.app](https://www.thuki.app/) for project info, downloads, and documentation.
+See [Study Buddy Pro](https://github.com/vindepemarte/study-buddy-pro) for project info and documentation.
 
 ## Which commands use OCR
 
-| Command | What it does with OCR'd text |
-|---|---|
-| `/extract` | Returns the raw text verbatim. No LLM call. |
-| `/tldr` | Summarizes the extracted text in 1-3 sentences. |
+| Command      | What it does with OCR'd text                        |
+| ------------ | --------------------------------------------------- |
+| `/extract`   | Returns the raw text verbatim. No LLM call.         |
+| `/tldr`      | Summarizes the extracted text in 1-3 sentences.     |
 | `/translate` | Translates the extracted text to a target language. |
-| `/rewrite` | Rewrites the extracted text for clarity. |
-| `/refine` | Fixes grammar and spelling in the extracted text. |
-| `/bullets` | Turns the extracted text into a bullet list. |
-| `/todos` | Pulls action items out of the extracted text. |
-| `/explain` | Explains the extracted text in plain language. |
+| `/rewrite`   | Rewrites the extracted text for clarity.            |
+| `/refine`    | Fixes grammar and spelling in the extracted text.   |
+| `/bullets`   | Turns the extracted text into a bullet list.        |
+| `/todos`     | Pulls action items out of the extracted text.       |
+| `/explain`   | Explains the extracted text in plain language.      |
 
-Every command above accepts attached images, a `/screen` capture, or both as its input source. The image bytes themselves are never sent to the model.
+Every command above accepts attached images, a `/screen` capture, or both as its input source. On macOS the image bytes are processed by Vision OCR and are not sent to the LLM. On Windows beta, OCR is performed by the local `gemma4:e2b` Ollama model.
 
 ## Why they work on text-only models
 
 A vision model is normally required when an image is part of the request. Models like `llama3.2:3b` reject or hallucinate when handed an image directly. The OCR-supported commands sidestep this entirely:
 
-1. Vision framework runs OCR on the image locally.
+1. The platform OCR path runs locally: Vision on macOS, `gemma4:e2b` through Ollama on Windows beta.
 2. The recognized text replaces the image in the prompt.
 3. The active model receives plain text only.
 
-This means you can use `llama3.2:3b`, `qwen2.5:7b`, `gemma:7b`, or any other text-only model on image inputs as long as you go through one of the OCR-supported commands. The capability strip will guide you toward this when an image is attached.
+This means you can use `llama3.2:3b`, `qwen2.5:7b`, `gemma:7b`, or any other text-only chat model on image inputs as long as you go through one of the OCR-supported commands. Windows still needs `gemma4:e2b` installed for the OCR step.
 
 For plain submits (no slash command) and `/screen` alone, a vision-capable model is still required because the image bytes go directly to the model.
 
@@ -46,16 +46,16 @@ Most AI assistants that "read" images send the image to a vision-capable languag
 - **Token cost:** Image tokens are expensive. A 1080p screenshot may consume 500-1000 tokens just to encode, before the model writes a single character of output.
 - **VRAM:** Running a multimodal model requires a vision-capable Ollama model loaded in GPU memory. Not every setup has one, and loading one takes time.
 
-The OCR commands bypass all of this. They call `VNRecognizeTextRequest` directly via the macOS Vision framework, which is a compiled CoreML-backed pipeline that runs in milliseconds on CPU. No model, no stream, no round-trip for the OCR step. The utility commands (`/tldr`, `/translate`, etc.) still call the model for the post-OCR work, but only with plain text.
+The OCR commands reduce the main chat model's image burden. macOS calls `VNRecognizeTextRequest` directly via the Vision framework. Windows beta calls the local `gemma4:e2b` Ollama model with an extraction-only prompt. The utility commands (`/tldr`, `/translate`, etc.) still call the selected chat model for the post-OCR work, but only with plain text.
 
 ## How it works
 
-When you submit any OCR-supported command, Thuki:
+When you submit any OCR-supported command, Study Buddy Pro:
 
 1. Waits for every attached image to finish backend processing (pending-image gate).
 2. Collects all attached images plus any fresh `/screen` capture.
 3. Invokes the Rust backend command `extract_text_command` via the Tauri IPC layer.
-4. For each image path, calls the macOS Vision framework (`VNRecognizeTextRequest`) at accuracy level `VNRequestTextRecognitionLevelAccurate`.
+4. For each image path, calls the platform OCR path: macOS Vision or Windows beta `gemma4:e2b`.
 5. Collects the recognized text from each `VNRecognizedTextObservation` in document order (top-to-bottom, left-to-right).
 6. Joins lines with `\n` per image. If multiple images were provided, results are separated with `\n\n---\n\n`.
 7. For `/extract`: returns the raw text verbatim. For utility commands: fills `$INPUT` in the prompt template with the OCR result, then calls the active model.
@@ -70,10 +70,10 @@ If Vision OCR fails on `/extract` (e.g., an unsupported image format), Thuki fal
 
 Typical wall-clock times on Apple Silicon (OCR step only):
 
-| Source | Time |
-|---|---|
-| Single screenshot (1080p) | Under 200ms |
-| Four attached images | Under 500ms |
+| Source                                      | Time        |
+| ------------------------------------------- | ----------- |
+| Single screenshot (1080p)                   | Under 200ms |
+| Four attached images                        | Under 500ms |
 | Combined `/screen /extract` (capture + OCR) | Under 700ms |
 
 These numbers reflect the Vision framework running on the Neural Engine / CPU. There is no warm-up delay, no tokenization, and no streaming. The OCR result is ready as soon as the framework finishes its recognition pass.

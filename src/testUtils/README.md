@@ -137,7 +137,7 @@ it('shows overlay on visibility event', async () => {
     emitTauriEvent('thuki://visibility', { state: 'show' });
   });
 
-  expect(screen.getByPlaceholderText('Ask Thuki anything...')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('Ask Study Buddy Pro anything...')).toBeInTheDocument();
 });
 ```
 

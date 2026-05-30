@@ -47,6 +47,17 @@ const SAMPLE: RawAppConfig = {
     reader_batch_timeout_s: 30,
     judge_timeout_s: 30,
     router_timeout_s: 45,
+    pipeline_wall_clock_budget_s: 90,
+  },
+  voice: {
+    enabled: true,
+    auto_speak_study: true,
+    base_url: 'http://127.0.0.1:7788',
+    voice: 'M1',
+    lang: 'auto',
+    steps: 8,
+    speed: 1.05,
+    max_chunk_length: 300,
   },
   debug: {
     trace_enabled: false,

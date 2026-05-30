@@ -35,22 +35,22 @@ describe('defaultExportFilename', () => {
   it('formats local date and time with zero padding', () => {
     // 2026-01-09T03:07:00 local
     const filename = defaultExportFilename(new Date(2026, 0, 9, 3, 7, 0));
-    expect(filename).toBe('thuki-chat-2026-01-09-0307.md');
+    expect(filename).toBe('study-buddy-pro-chat-2026-01-09-0307.md');
   });
 
   it('formats single-digit month and day with zero padding', () => {
     const filename = defaultExportFilename(new Date(2026, 5, 4, 12, 30, 0));
-    expect(filename).toBe('thuki-chat-2026-06-04-1230.md');
+    expect(filename).toBe('study-buddy-pro-chat-2026-06-04-1230.md');
   });
 
   it('formats midnight as 0000', () => {
     const filename = defaultExportFilename(new Date(2026, 11, 31, 0, 0, 0));
-    expect(filename).toBe('thuki-chat-2026-12-31-0000.md');
+    expect(filename).toBe('study-buddy-pro-chat-2026-12-31-0000.md');
   });
 
   it('formats double-digit hour and minute correctly', () => {
     const filename = defaultExportFilename(new Date(2026, 4, 24, 14, 30, 15));
-    expect(filename).toBe('thuki-chat-2026-05-24-1430.md');
+    expect(filename).toBe('study-buddy-pro-chat-2026-05-24-1430.md');
   });
 });
 
@@ -70,7 +70,7 @@ describe('serializeForFile', () => {
 
     const result = await serializeForFile(messages, CTX, NOW, stubImageLoader);
 
-    expect(result).toContain('---\napp: "Thuki"');
+    expect(result).toContain('---\napp: "Study Buddy Pro"');
     expect(result).toContain('model: "llama3.2:3b"');
     expect(result).toMatch(/exported_at: "2026-05-24T14:30:15[+-]\d{2}:\d{2}"/);
     expect(result).toContain('message_count: 2');

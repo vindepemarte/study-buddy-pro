@@ -48,8 +48,8 @@ export function AboutTab({ onSaved, onReload }: AboutTabProps) {
   const sha = import.meta.env.VITE_GIT_COMMIT_SHA?.slice(0, 7);
   const APP_VERSION = sha ? `${pkg.version}+nightly.${sha}` : pkg.version;
   const releaseUrl = sha
-    ? 'https://github.com/quiet-node/thuki/releases/tag/nightly'
-    : `https://github.com/quiet-node/thuki/releases/tag/v${pkg.version}`;
+    ? 'https://github.com/vindepemarte/study-buddy-pro/releases/tag/nightly'
+    : `https://github.com/vindepemarte/study-buddy-pro/releases/tag/v${pkg.version}`;
   const [confirmResetAll, setConfirmResetAll] = useState(false);
   const [perms, setPerms] = useState<PermissionsState>({
     accessibility: false,
@@ -116,11 +116,11 @@ export function AboutTab({ onSaved, onReload }: AboutTabProps) {
       <div className={styles.aboutHero}>
         <img
           src={thukiLogo}
-          alt="Thuki"
+          alt="Study Buddy Pro"
           className={styles.aboutHeroLogo}
           draggable={false}
         />
-        <div className={styles.aboutHeroTitle}>Thuki</div>
+        <div className={styles.aboutHeroTitle}>Study Buddy Pro</div>
         <Tooltip label={`View v${APP_VERSION} release notes on GitHub`}>
           <button
             type="button"
@@ -132,35 +132,35 @@ export function AboutTab({ onSaved, onReload }: AboutTabProps) {
           </button>
         </Tooltip>
         <div className={styles.aboutHeroTagline}>
-          A floating, local-first AI secretary for macOS.
+          A local-first study buddy with screenshots, quizzes, and voice.
           <br />
           <span className={styles.aboutHeroMantra}>
-            No cloud. No clutter. Just answers.
+            Understand first. Practice next. Remember longer.
           </span>
         </div>
         <div className={styles.aboutHeroActions}>
-          <Tooltip label="View Thuki on GitHub">
+          <Tooltip label="View Study Buddy Pro on GitHub">
             <button
               type="button"
               className={styles.iconLinkBtn}
-              aria-label="View Thuki on GitHub"
+              aria-label="View Study Buddy Pro on GitHub"
               onClick={() =>
                 void invoke('open_url', {
-                  url: 'https://github.com/quiet-node/thuki',
+                  url: 'https://github.com/vindepemarte/study-buddy-pro',
                 })
               }
             >
               <GitHubIcon />
             </button>
           </Tooltip>
-          <Tooltip label="Reach out to Logan on X for questions or ideas.">
+          <Tooltip label="Reach out on GitHub Issues for questions or ideas.">
             <button
               type="button"
               className={styles.iconLinkBtn}
-              aria-label="Reach out to Logan on X for questions or ideas."
+              aria-label="Open GitHub Discussions or Issues for questions or ideas."
               onClick={() =>
                 void invoke('open_url', {
-                  url: 'https://x.com/quiet_node',
+                  url: 'https://github.com/vindepemarte/study-buddy-pro/issues',
                 })
               }
             >
@@ -174,21 +174,21 @@ export function AboutTab({ onSaved, onReload }: AboutTabProps) {
               aria-label="Open an issue or share feedback on GitHub"
               onClick={() =>
                 void invoke('open_url', {
-                  url: 'https://github.com/quiet-node/thuki/issues',
+                  url: 'https://github.com/vindepemarte/study-buddy-pro/issues',
                 })
               }
             >
               <FeedbackIcon />
             </button>
           </Tooltip>
-          <Tooltip label="Visit thuki.app — the project website.">
+          <Tooltip label="Open the Study Buddy Pro repository.">
             <button
               type="button"
               className={styles.iconLinkBtn}
-              aria-label="Visit thuki.app for more about Thuki"
+              aria-label="Open the Study Buddy Pro repository"
               onClick={() =>
                 void invoke('open_url', {
-                  url: 'https://www.thuki.app/',
+                  url: 'https://github.com/vindepemarte/study-buddy-pro',
                 })
               }
             >
@@ -230,8 +230,8 @@ export function AboutTab({ onSaved, onReload }: AboutTabProps) {
             )}
             <span>
               {updateAvailable
-                ? `Thuki ${updater.state.update?.version} is ready`
-                : 'Thuki is up to date'}
+                ? `Study Buddy Pro ${updater.state.update?.version} is ready`
+                : 'Study Buddy Pro is up to date'}
             </span>
           </div>
           <div className={styles.updateHeroMeta}>{lastCheckedLabel}</div>
@@ -340,10 +340,10 @@ export function AboutTab({ onSaved, onReload }: AboutTabProps) {
             className={`${styles.button} ${styles.buttonGhost}`}
             onClick={() => void invoke('reveal_config_in_finder')}
           >
-            Reveal Thuki app data
+            Reveal Study Buddy Pro app data
           </button>
           <Tooltip
-            label="Re-read config.toml from disk and refresh this window. Use after editing the file by hand outside Thuki."
+            label="Re-read config.toml from disk and refresh this window. Use after editing the file by hand outside Study Buddy Pro."
             multiline
             placement="top"
           >
@@ -417,7 +417,7 @@ function XIcon() {
   );
 }
 
-// Globe glyph for the "thuki.app" website button.
+// Globe glyph for the project repository button.
 function GlobeIcon() {
   return (
     <svg

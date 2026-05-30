@@ -24,7 +24,9 @@ use super::defaults::{
     DEFAULT_SYSTEM_CUSTOMIZED, DEFAULT_SYSTEM_PROMPT_BASE, DEFAULT_TEXT_BASE_PX,
     DEFAULT_TEXT_FONT_WEIGHT, DEFAULT_TEXT_LETTER_SPACING_PX, DEFAULT_TEXT_LINE_HEIGHT,
     DEFAULT_TOP_K_URLS, DEFAULT_UPDATER_AUTO_CHECK, DEFAULT_UPDATER_CHECK_INTERVAL_HOURS,
-    DEFAULT_UPDATER_MANIFEST_URL,
+    DEFAULT_UPDATER_MANIFEST_URL, DEFAULT_VOICE_AUTO_SPEAK_STUDY, DEFAULT_VOICE_BASE_URL,
+    DEFAULT_VOICE_ENABLED, DEFAULT_VOICE_LANG, DEFAULT_VOICE_MAX_CHUNK_LENGTH, DEFAULT_VOICE_NAME,
+    DEFAULT_VOICE_SPEED, DEFAULT_VOICE_STEPS,
 };
 
 /// Static, user-tunable inference daemon configuration.
@@ -238,6 +240,45 @@ impl Default for SearchSection {
     }
 }
 
+/// Local text-to-speech configuration. Study Buddy Pro speaks through a
+/// loopback Supertonic sidecar; the user can tune the voice without changing
+/// the app binary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct VoiceSection {
+    /// Enables the voice system. When false, speak commands become no-ops.
+    pub enabled: bool,
+    /// Automatically speak guided Study Mode turns. Normal chat stays manual.
+    pub auto_speak_study: bool,
+    /// Base URL of the local Supertonic server.
+    pub base_url: String,
+    /// Built-in or imported Supertonic voice/style name.
+    pub voice: String,
+    /// ISO language code, or "auto" to let Study Buddy Pro infer per turn.
+    pub lang: String,
+    /// Supertonic quality/speed steps.
+    pub steps: u32,
+    /// Spoken speed multiplier.
+    pub speed: f64,
+    /// Chunk size sent to Supertonic for long tutor responses.
+    pub max_chunk_length: u32,
+}
+
+impl Default for VoiceSection {
+    fn default() -> Self {
+        Self {
+            enabled: DEFAULT_VOICE_ENABLED,
+            auto_speak_study: DEFAULT_VOICE_AUTO_SPEAK_STUDY,
+            base_url: DEFAULT_VOICE_BASE_URL.to_string(),
+            voice: DEFAULT_VOICE_NAME.to_string(),
+            lang: DEFAULT_VOICE_LANG.to_string(),
+            steps: DEFAULT_VOICE_STEPS,
+            speed: DEFAULT_VOICE_SPEED,
+            max_chunk_length: DEFAULT_VOICE_MAX_CHUNK_LENGTH,
+        }
+    }
+}
+
 /// Developer and power-user debugging knobs.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
@@ -307,6 +348,7 @@ pub struct AppConfig {
     pub window: WindowSection,
     pub quote: QuoteSection,
     pub search: SearchSection,
+    pub voice: VoiceSection,
     pub debug: DebugSection,
     #[serde(default)]
     pub updater: UpdaterSection,

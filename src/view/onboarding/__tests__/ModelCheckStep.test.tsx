@@ -54,7 +54,9 @@ describe('ModelCheckStep', () => {
 
     expect(screen.getByText('Set up your local AI')).toBeInTheDocument();
     expect(
-      screen.getByText('Runs Ollama locally. Your chats stay on this machine.'),
+      screen.getByText(
+        'Runs Ollama locally. Your study sessions stay on this machine.',
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText('Install & start Ollama')).toBeInTheDocument();
     expect(
@@ -86,7 +88,7 @@ describe('ModelCheckStep', () => {
       screen.queryByText('STEP 2 · ACTION NEEDED'),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText("Almost there. Let's pick a brain for Thuki."),
+      screen.getByText("Almost there. Let's pick a local model."),
     ).toBeInTheDocument();
     expect(
       screen.getByText('You can swap or add more later.'),

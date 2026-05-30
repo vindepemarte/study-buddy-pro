@@ -12,12 +12,14 @@ describe('OnboardingView (orchestrator)', () => {
   it('renders PermissionsStep when stage is permissions', async () => {
     render(<OnboardingView stage="permissions" onComplete={vi.fn()} />);
     await act(async () => {});
-    expect(screen.getByText("Let's get Thuki set up")).toBeInTheDocument();
+    expect(
+      screen.getByText("Let's get Study Buddy Pro set up"),
+    ).toBeInTheDocument();
   });
 
   it('renders IntroStep when stage is intro', () => {
     render(<OnboardingView stage="intro" onComplete={vi.fn()} />);
-    expect(screen.getByText("You're all set")).toBeInTheDocument();
+    expect(screen.getByText('Study Buddy Pro is ready')).toBeInTheDocument();
   });
 
   it('renders ModelCheckStep when stage is model_check', async () => {

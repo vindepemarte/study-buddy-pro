@@ -27,8 +27,11 @@ pub mod onboarding;
 pub mod screenshot;
 pub mod search;
 pub mod settings_commands;
+pub mod setup;
+pub mod study;
 pub mod trace;
 pub mod updater;
+pub mod voice;
 pub mod warmup;
 
 #[cfg(target_os = "macos")]
@@ -983,6 +986,33 @@ fn notify_frontend_ready(app_handle: tauri::AppHandle, db: tauri::State<history:
                 return;
             }
         }
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Ok(conn) = db.0.lock() {
+                match onboarding::get_stage(&conn)
+                    .unwrap_or(onboarding::OnboardingStage::ModelCheck)
+                {
+                    onboarding::OnboardingStage::Complete => {}
+                    onboarding::OnboardingStage::Intro => {
+                        show_onboarding_window(&app_handle, onboarding::OnboardingStage::Intro);
+                        return;
+                    }
+                    onboarding::OnboardingStage::Permissions
+                    | onboarding::OnboardingStage::ModelCheck => {
+                        let _ =
+                            onboarding::set_stage(&conn, &onboarding::OnboardingStage::ModelCheck);
+                        show_onboarding_window(
+                            &app_handle,
+                            onboarding::OnboardingStage::ModelCheck,
+                        );
+                        return;
+                    }
+                }
+            } else {
+                show_onboarding_window(&app_handle, onboarding::OnboardingStage::ModelCheck);
+                return;
+            }
+        }
         show_overlay(&app_handle, crate::context::ActivationContext::empty());
     }
 }
@@ -1303,6 +1333,25 @@ fn show_onboarding_window(app_handle: &tauri::AppHandle, stage: onboarding::Onbo
     });
 }
 
+/// Non-macOS onboarding uses a regular Tauri window instead of NSPanel.
+#[cfg(not(target_os = "macos"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn show_onboarding_window(app_handle: &tauri::AppHandle, stage: onboarding::OnboardingStage) {
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window("main") {
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+                ONBOARDING_LOGICAL_WIDTH,
+                ONBOARDING_LOGICAL_HEIGHT,
+            )));
+            let _ = window.center();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        let _ = handle.emit(ONBOARDING_EVENT, OnboardingPayload { stage });
+    });
+}
+
 /// Payload emitted to the frontend for every onboarding transition.
 #[derive(Clone, serde::Serialize)]
 struct OnboardingPayload {
@@ -1399,10 +1448,21 @@ fn build_tray_menu<R: tauri::Runtime>(
 ) -> tauri::Result<tauri::menu::Menu<R>> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 
-    let show = MenuItem::with_id(app, "show", "Open Thuki", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("Cmd+,"))?;
+    let settings_accel = if cfg!(target_os = "macos") {
+        "Cmd+,"
+    } else {
+        "Ctrl+,"
+    };
+    let quit_accel = if cfg!(target_os = "macos") {
+        "Cmd+Q"
+    } else {
+        "Alt+F4"
+    };
+
+    let show = MenuItem::with_id(app, "show", "Open Study Buddy Pro", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some(settings_accel))?;
     let sep1 = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Thuki", true, Some("Cmd+Q"))?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Study Buddy Pro", true, Some(quit_accel))?;
 
     if let Some(version) = update_version {
         let label = format!("What's New in v{version}");
@@ -1465,6 +1525,23 @@ pub fn run() {
         builder = builder.plugin(tauri_nspanel::init());
     }
 
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_shortcut("ctrl+space")
+                .expect("Ctrl+Space must be a valid Windows shortcut")
+                .with_handler(|app, _shortcut, event| {
+                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        let is_visible = OVERLAY_INTENDED_VISIBLE.load(Ordering::SeqCst);
+                        let ctx = crate::context::capture_activation_context(is_visible);
+                        toggle_overlay(app, ctx);
+                    }
+                })
+                .build(),
+        );
+    }
+
     builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -1501,7 +1578,7 @@ pub fn run() {
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(tray_icon)
                 .icon_as_template(false)
-                .tooltip("Thuki")
+                .tooltip("Study Buddy Pro")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -1719,6 +1796,7 @@ pub fn run() {
             // ── Generation + conversation state ─────────────────────
             app.manage(commands::GenerationState::new());
             app.manage(commands::ConversationHistory::new());
+            app.manage(voice::VoicePlaybackState::new());
 
             // ── Unified trace recorder ─────────────────────────────
             // Off by default: when `[debug] trace_enabled = false` in
@@ -1878,7 +1956,21 @@ pub fn run() {
             #[cfg(not(coverage))]
             updater::commands::reset_and_relaunch_for_grant,
             #[cfg(not(coverage))]
-            updater::commands::consume_pending_grant_resume
+            updater::commands::consume_pending_grant_resume,
+            voice::voice_health,
+            voice::voice_styles,
+            voice::speak_text,
+            voice::stop_speech,
+            voice::voice_start,
+            voice::voice_stop,
+            study::create_study_session,
+            study::record_learning_event,
+            study::record_vocabulary_attempt,
+            study::record_quiz_attempt,
+            study::get_learner_summary,
+            setup::get_setup_readiness,
+            setup::start_search_services,
+            setup::stop_search_services
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -2,7 +2,7 @@
 
 # Commands
 
-Website: [thuki.app](https://www.thuki.app/)
+Repository: [study-buddy-pro](https://github.com/vindepemarte/study-buddy-pro)
 
 Commands are written as whole-word `/` triggers anywhere in your message. Press `/` to open the command suggestion menu, then Tab to complete or Enter to select.
 
@@ -14,11 +14,11 @@ Commands that operate on text follow a consistent input priority:
 2. **No highlighted text + typed text after command:** typed text is the input
 3. **Both present:** highlighted text is the primary input; typed text is appended as an additional instruction
 
-This means you can highlight text anywhere on screen, summon Thuki with double-tap Control, type a command, and hit Enter without retyping the selected content.
+This means you can highlight text anywhere on screen, summon Study Buddy Pro with double-tap Control on macOS or Ctrl+Space on Windows, type a command, and hit Enter without retyping the selected content.
 
 ## Image input on text-only models
 
-`/extract`, `/tldr`, `/translate`, `/rewrite`, `/refine`, `/bullets`, `/todos`, and `/explain` read attached images locally via macOS Vision OCR, so they work even when the active model has no vision capability. Only plain submits and `/screen` alone require a vision model to read images. See [OCR-supported commands](./ocr-commands.md) for the full list and details.
+`/extract`, `/tldr`, `/translate`, `/rewrite`, `/refine`, `/bullets`, `/todos`, and `/explain` read attached images through local OCR: macOS Vision on macOS, `gemma4:e2b` through Ollama on Windows beta. See [OCR-supported commands](./ocr-commands.md) for the full list and details.
 
 ## /search
 
@@ -30,7 +30,7 @@ Runs agentic web search and answers from live sources with citations.
 - `/search who owns Figma now?`: searches live sources for a current answer
 - `/search latest React 19 release notes`: retrieves recent release information from the web
 
-**Behavior:** Routes the message through Thuki's local search pipeline instead of plain chat. Answers are grounded in retrieved web sources and typically include inline citations plus a Sources footer.
+**Behavior:** Routes the message through Study Buddy Pro's local search pipeline instead of plain chat. Answers are grounded in retrieved web sources and typically include inline citations plus a Sources footer.
 
 **Limit:** Requires the search sandbox to be running. See [agentic-search.md#setup](agentic-search.md#setup) for setup steps. Use it for current, changing, or cutoff-sensitive information.
 
@@ -38,7 +38,7 @@ Runs agentic web search and answers from live sources with citations.
 
 ## /extract
 
-Extracts all visible text from screenshots or attached images using macOS Vision OCR.
+Extracts all visible text from screenshots or attached images using the platform local OCR path.
 
 **Usage:** `/extract [optional message]`
 
@@ -46,11 +46,11 @@ Extracts all visible text from screenshots or attached images using macOS Vision
 - `/extract` with an attached image: extracts all text from the image
 - `/screen /extract`: captures the screen and extracts all visible text
 
-**Behavior:** Text is extracted using the macOS Vision framework and returned verbatim in a code block. No prose or explanation is added. When multiple images are provided, each result is separated by a horizontal rule. Returns "[No text detected]" when no readable text is found.
+**Behavior:** Text is extracted locally and returned verbatim in a code block. macOS uses Vision OCR; Windows beta uses the local `gemma4:e2b` Ollama vision model. No prose or explanation is added. When multiple images are provided, each result is separated by a horizontal rule. Returns "[No text detected]" when no readable text is found.
 
 **Composable:** `/extract` can combine with `/screen` to capture then extract in one step.
 
-**Permission:** Uses the same Screen Recording permission as `/screen` when combined with it.
+**Permission:** Uses the same `/screen` capture requirements when combined with it. macOS requires Screen Recording permission; Windows does not.
 
 ---
 
@@ -64,13 +64,13 @@ Captures your screen and attaches it as context for the current message.
 - `/screen`: sends a screenshot with no additional message
 - `/screen what is this error?`: attaches a screenshot and asks a question about it
 
-**Behavior:** The screenshot is taken when you submit the message. Thuki's own window is excluded from the capture, and the image appears in your message bubble like a pasted screenshot.
+**Behavior:** The screenshot is taken when you submit the message. Study Buddy Pro's own window is excluded from the capture, and the image appears in your message bubble like a pasted screenshot.
 
 **Composable:** `/screen` can combine with `/think` and utility commands. For example, `/screen /rewrite` captures the screen and rewrites whatever text the model can see.
 
 **Limit:** One `/screen` capture per message. You may also attach up to 3 images manually for a total of 4 images per message.
 
-**Permission:** Requires Screen Recording permission. If denied, Thuki cannot capture the screen until access is granted in System Settings.
+**Permission:** macOS requires Screen Recording permission. Windows beta captures through the local desktop APIs without a Screen Recording permission prompt.
 
 ---
 
@@ -87,6 +87,54 @@ Enables extended reasoning before the model responds.
 **Behavior:** A collapsible Thinking block appears above the response showing the model's reasoning chain. The final answer appears below it as normal.
 
 **Composable:** `/think` works with `/screen` and all utility commands. For example, `/think /tldr` summarizes with extended reasoning enabled.
+
+---
+
+## /study
+
+Starts a step-by-step tutoring session from typed text, highlighted text, or OCR context.
+
+**Usage:** `/study [material or question]`
+
+**Examples:**
+- `/study I cannot understand photosynthesis`: starts a guided explanation with checks
+- `/screen /study`: captures the screen and studies what is visible
+
+**Behavior:** Explains one small concept, asks a check question, adapts from the answer, and tracks learning locally.
+
+**Composable:** `/study` works with `/screen` and attached images through local OCR.
+
+---
+
+## /quiz
+
+Creates a short adaptive quiz from the current material.
+
+**Usage:** `/quiz [topic or material]`
+
+**Examples:**
+- `/quiz fractions`: asks one question at a time
+- `/screen /quiz`: quizzes from the visible page or exercise
+
+**Behavior:** Asks one question, waits for the student response, then grades and explains the mistake or next step.
+
+**Composable:** `/quiz` works with `/screen` and attached images through local OCR.
+
+---
+
+## /vocab
+
+Starts the vocabulary mastery loop for difficult words.
+
+**Usage:** `/vocab [word or material]`
+
+**Examples:**
+- `/vocab photosynthesis`: teaches definitions through original sentences
+- `/screen /vocab`: extracts difficult words from the visible material
+
+**Behavior:** Teaches one definition at a time, asks for original sentences, requires 3-5 correct uses, then explains etymology.
+
+**Composable:** `/vocab` works with `/screen` and attached images through local OCR.
 
 ---
 

@@ -17,7 +17,9 @@ describe('MinimizedIcon', () => {
         onRestore={onRestore}
       />,
     );
-    const btn = screen.getByRole('button', { name: /restore thuki/i });
+    const btn = screen.getByRole('button', {
+      name: /restore study buddy pro/i,
+    });
     fireEvent.pointerDown(btn, { clientX: 0, clientY: 0 });
     fireEvent.pointerUp(btn, { clientX: 1, clientY: 1 });
     expect(onRestore).toHaveBeenCalledTimes(1);
@@ -32,7 +34,9 @@ describe('MinimizedIcon', () => {
         onRestore={onRestore}
       />,
     );
-    const btn = screen.getByRole('button', { name: /restore thuki/i });
+    const btn = screen.getByRole('button', {
+      name: /restore study buddy pro/i,
+    });
     fireEvent.pointerDown(btn, { clientX: 0, clientY: 0 });
     fireEvent.pointerMove(btn, { clientX: 40, clientY: 40 });
     fireEvent.pointerUp(btn, { clientX: 40, clientY: 40 });
@@ -43,7 +47,9 @@ describe('MinimizedIcon', () => {
     render(
       <MinimizedIcon isWorking={false} hasUnseen={false} onRestore={vi.fn()} />,
     );
-    const btn = screen.getByRole('button', { name: /restore thuki/i });
+    const btn = screen.getByRole('button', {
+      name: /restore study buddy pro/i,
+    });
     fireEvent.pointerDown(btn, { clientX: 0, clientY: 0 });
     fireEvent.pointerMove(btn, { clientX: 40, clientY: 40 });
     expect(__mockWindow.startDragging).toHaveBeenCalled();
@@ -53,7 +59,9 @@ describe('MinimizedIcon', () => {
     render(
       <MinimizedIcon isWorking={false} hasUnseen={false} onRestore={vi.fn()} />,
     );
-    const btn = screen.getByRole('button', { name: /restore thuki/i });
+    const btn = screen.getByRole('button', {
+      name: /restore study buddy pro/i,
+    });
     fireEvent.pointerMove(btn, { clientX: 40, clientY: 40 });
     expect(__mockWindow.startDragging).not.toHaveBeenCalled();
   });
@@ -86,7 +94,9 @@ describe('MinimizedIcon', () => {
     render(
       <MinimizedIcon isWorking={false} hasUnseen={false} onRestore={vi.fn()} />,
     );
-    const btn = screen.getByRole('button', { name: /restore thuki/i });
+    const btn = screen.getByRole('button', {
+      name: /restore study buddy pro/i,
+    });
     fireEvent.pointerDown(btn, { clientX: 0, clientY: 0 });
     fireEvent.pointerMove(btn, { clientX: 40, clientY: 40 });
     fireEvent.pointerMove(btn, { clientX: 80, clientY: 80 });
@@ -97,13 +107,15 @@ describe('MinimizedIcon', () => {
     render(
       <MinimizedIcon isWorking={false} hasUnseen={false} onRestore={vi.fn()} />,
     );
-    const btn = screen.getByRole('button', { name: /restore thuki/i });
+    const btn = screen.getByRole('button', {
+      name: /restore study buddy pro/i,
+    });
     // No opaque card background
     expect(btn.className).not.toContain('bg-surface-elevated');
     expect(btn.className).not.toContain('rounded-full');
     expect(btn.className).not.toContain('shadow-lg');
     // Logo is 48px (w-12 h-12) with no rounded-xl crop
-    const img = screen.getByAltText('Thuki');
+    const img = screen.getByAltText('Study Buddy Pro');
     expect(img.className).toContain('w-12');
     expect(img.className).toContain('h-12');
     expect(img.className).not.toContain('rounded-xl');

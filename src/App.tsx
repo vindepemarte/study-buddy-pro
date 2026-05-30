@@ -146,6 +146,7 @@ type PendingSubmit =
       query: string;
       context: string | undefined;
       think: boolean;
+      promptOverride?: string;
     }
   | {
       kind: 'utility-ocr';
@@ -167,6 +168,7 @@ type PendingSubmit =
       query: string;
       context: string | undefined;
       think: boolean;
+      promptOverride?: string;
     };
 
 /** Total transparent padding around the morphing container: pt-2(8) + pb-6(24) + motion py-2(16). */
@@ -264,6 +266,39 @@ export function parseCommands(text: string): {
     }
   }
   return { found, strippedMessage: remaining.join(' ') };
+}
+
+const STUDY_TRIGGERS = new Set(['/study', '/quiz', '/vocab']);
+
+function isStudyTurn(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (Array.from(STUDY_TRIGGERS).some((trigger) => lower.includes(trigger))) {
+    return true;
+  }
+  return [
+    "i can't understand",
+    'i cant understand',
+    "i don't understand",
+    'i dont understand',
+    "i don't get",
+    'i dont get',
+    'teach me',
+    'help me study',
+    'quiz me',
+    'explain this subject',
+    'study this',
+  ].some((phrase) => lower.includes(phrase));
+}
+
+function buildNaturalStudyPrompt(input: string, context?: string): string {
+  const material = [context, input].filter(Boolean).join('\n\n');
+  return [
+    'Start guided Study Mode for this material.',
+    'Diagnose what the student is struggling with, explain only the first small step, then ask one short check question.',
+    'If a difficult word is blocking understanding, begin the vocabulary mastery loop.',
+    '',
+    material,
+  ].join('\n');
 }
 
 type OverlayVisibilityPayload =
@@ -421,6 +456,18 @@ function App() {
     return () => clearTimeout(timer);
   }, [shakeAskBar]);
 
+  const config = useConfig();
+  const quote = config.quote;
+  const voiceStartRequestedRef = useRef(false);
+
+  useEffect(() => {
+    if (!config.voice.enabled || voiceStartRequestedRef.current) return;
+    voiceStartRequestedRef.current = true;
+    void invoke('voice_start').catch(() => {
+      // Missing Supertonic is surfaced by explicit voice health/setup checks.
+    });
+  }, [config.voice.enabled]);
+
   const {
     conversationId,
     isSaved,
@@ -443,8 +490,35 @@ function App() {
       assistantMsg: Parameters<typeof persistTurn>[1],
     ) => {
       await persistTurn(userMsg, assistantMsg);
+      if (isStudyTurn(userMsg.content) && assistantMsg.content.trim()) {
+        void invoke('record_learning_event', {
+          event: {
+            session_id: null,
+            kind: 'study_turn',
+            payload: {
+              conversation_id: conversationId,
+              user: userMsg.content,
+              assistant: assistantMsg.content,
+              created_at: Date.now(),
+            },
+          },
+        });
+      }
+      if (
+        config.voice.enabled &&
+        config.voice.autoSpeakStudy &&
+        isStudyTurn(userMsg.content) &&
+        assistantMsg.content.trim()
+      ) {
+        void invoke('speak_text', { text: assistantMsg.content });
+      }
     },
-    [persistTurn],
+    [
+      persistTurn,
+      conversationId,
+      config.voice.enabled,
+      config.voice.autoSpeakStudy,
+    ],
   );
 
   const {
@@ -554,8 +628,6 @@ function App() {
    */
   const [sessionId, setSessionId] = useState(0);
   const [selectedContext, setSelectedContext] = useState<string | null>(null);
-  const config = useConfig();
-  const quote = config.quote;
 
   /**
    * True when the window is near the screen bottom and should grow upward.
@@ -1823,12 +1895,17 @@ function App() {
 
   /** Fires the actual ask() call and cleans up attached images + input. */
   const executeSubmit = useCallback(
-    (submitQuery: string, context: string | undefined, think?: boolean) => {
+    (
+      submitQuery: string,
+      context: string | undefined,
+      think?: boolean,
+      promptOverride?: string,
+    ) => {
       const readyPaths = attachedImages
         .filter((img) => img.filePath !== null)
         .map((img) => img.filePath as string);
       const images = readyPaths.length > 0 ? readyPaths : undefined;
-      ask(submitQuery, context, images, think);
+      ask(submitQuery, context, images, think, promptOverride);
       setSelectedContext(null);
       setQuery('');
       for (const img of attachedImages) {
@@ -2563,6 +2640,10 @@ function App() {
       return;
 
     const context = sanitizeContext(selectedContext, quote.maxContextLength);
+    const naturalStudy = !utilityTrigger && isStudyTurn(trimmedQuery);
+    const naturalStudyPrompt = naturalStudy
+      ? buildNaturalStudyPrompt(strippedMessage || trimmedQuery, context)
+      : undefined;
 
     // Unified pre-flight pending-images gate. Every command that needs
     // resolved image paths waits here: /extract, /screen, utility-OCR, and
@@ -2612,6 +2693,7 @@ function App() {
           query: trimmedQuery,
           context,
           think: hasThink,
+          promptOverride: naturalStudyPrompt,
         };
       } else {
         pendingSubmitRef.current = {
@@ -2619,6 +2701,7 @@ function App() {
           query: trimmedQuery,
           context,
           think: hasThink,
+          promptOverride: naturalStudyPrompt,
         };
       }
       return;
@@ -2643,7 +2726,7 @@ function App() {
     }
 
     if (hasScreen) {
-      void handleScreenSubmit(trimmedQuery, hasThink, undefined);
+      void handleScreenSubmit(trimmedQuery, hasThink, naturalStudyPrompt);
       return;
     }
 
@@ -2675,7 +2758,12 @@ function App() {
       return;
     }
 
-    executeSubmit(trimmedQuery, context, hasThink || undefined);
+    executeSubmit(
+      trimmedQuery,
+      context,
+      hasThink || undefined,
+      naturalStudyPrompt,
+    );
   }, [
     query,
     isGenerating,
@@ -2742,14 +2830,20 @@ function App() {
         return;
       case 'screen':
         setPendingUserMessage(null);
-        void handleScreenSubmit(ref.query, ref.think, undefined);
+        void handleScreenSubmit(ref.query, ref.think, ref.promptOverride);
         return;
       case 'plain': {
         setIsSubmitPending(false);
         // Clear the preview message - ask() will add the real one with file paths.
         setPendingUserMessage(null);
         const images = attachedImages.map((img) => img.filePath as string);
-        void ask(ref.query, ref.context, images, ref.think || undefined);
+        void ask(
+          ref.query,
+          ref.context,
+          images,
+          ref.think || undefined,
+          ref.promptOverride,
+        );
         setSelectedContext(null);
         for (const img of attachedImages) {
           URL.revokeObjectURL(img.blobUrl);

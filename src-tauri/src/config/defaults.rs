@@ -123,6 +123,19 @@ pub const BOUNDS_QUOTE_MAX_CONTEXT_LENGTH: (u32, u32) = (1, 65_536);
 pub const DEFAULT_SEARXNG_URL: &str = "http://127.0.0.1:25017";
 pub const DEFAULT_READER_URL: &str = "http://127.0.0.1:25018";
 
+/// Supertonic local TTS defaults. The sidecar binds to loopback only.
+pub const DEFAULT_VOICE_ENABLED: bool = true;
+pub const DEFAULT_VOICE_AUTO_SPEAK_STUDY: bool = true;
+pub const DEFAULT_VOICE_BASE_URL: &str = "http://127.0.0.1:7788";
+pub const DEFAULT_VOICE_NAME: &str = "M1";
+pub const DEFAULT_VOICE_LANG: &str = "auto";
+pub const DEFAULT_VOICE_STEPS: u32 = 8;
+pub const DEFAULT_VOICE_SPEED: f64 = 1.05;
+pub const DEFAULT_VOICE_MAX_CHUNK_LENGTH: u32 = 300;
+pub const BOUNDS_VOICE_STEPS: (u32, u32) = (4, 12);
+pub const BOUNDS_VOICE_SPEED: (f64, f64) = (0.7, 2.0);
+pub const BOUNDS_VOICE_MAX_CHUNK_LENGTH: (u32, u32) = (80, 1000);
+
 /// Default values for user-configurable search pipeline tuning knobs.
 /// `max_iterations` caps the search-refine loop count; `top_k_urls` limits
 /// how many reranked URLs are forwarded to the reader;
@@ -308,6 +321,15 @@ pub const ALLOWED_FIELDS: &[(&str, &str)] = &[
     ("search", "judge_timeout_s"),
     ("search", "router_timeout_s"),
     ("search", "pipeline_wall_clock_budget_s"),
+    // [voice]
+    ("voice", "enabled"),
+    ("voice", "auto_speak_study"),
+    ("voice", "base_url"),
+    ("voice", "voice"),
+    ("voice", "lang"),
+    ("voice", "steps"),
+    ("voice", "speed"),
+    ("voice", "max_chunk_length"),
     // [debug]
     ("debug", "trace_enabled"),
     // [updater]
@@ -324,6 +346,7 @@ pub const ALLOWED_SECTIONS: &[&str] = &[
     "window",
     "quote",
     "search",
+    "voice",
     "debug",
     "updater",
 ];
@@ -338,7 +361,7 @@ pub const DEFAULT_UPDATER_CHECK_INTERVAL_HOURS: u64 = 24;
 pub const BOUNDS_UPDATER_CHECK_INTERVAL_HOURS: (u64, u64) = (1, 168);
 /// URL of the Tauri updater JSON manifest. Points to the latest GitHub release asset.
 pub const DEFAULT_UPDATER_MANIFEST_URL: &str =
-    "https://github.com/quiet-node/thuki/releases/latest/download/latest.json";
+    "https://github.com/vindepemarte/study-buddy-pro/releases/latest/download/latest.json";
 /// Filename of the JSON sidecar that persists snooze deadlines across restarts.
 /// Lives next to `config.toml` in `app_config_dir`. Single source of truth so
 /// the writer (commands.rs) and the loader (lib.rs) cannot drift.

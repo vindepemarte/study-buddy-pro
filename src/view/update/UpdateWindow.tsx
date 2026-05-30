@@ -142,11 +142,11 @@ export function UpdateWindow() {
           <header className="flex flex-col items-center px-12 pt-7 pb-6 text-center">
             <img
               src="/thuki-logo.png"
-              alt="Thuki"
+              alt="Study Buddy Pro"
               className="h-[76px] w-[76px] object-contain"
             />
             <h1 className="mt-4 text-[18px] font-bold tracking-[-0.2px] text-text-primary">
-              A new version of Thuki is available!
+              A new version of Study Buddy Pro is available!
             </h1>
             <p className="mt-2 text-[13px] leading-[1.5] whitespace-nowrap text-text-secondary">
               {`Version ${update.version}`}
@@ -203,7 +203,7 @@ export function UpdateWindow() {
           className="flex flex-1 items-center justify-center px-6 text-[13px] text-text-secondary"
           data-testid="update-empty"
         >
-          Thuki is up to date.
+          Study Buddy Pro is up to date.
         </div>
       )}
     </div>

@@ -363,6 +363,12 @@ pub enum ModelSetupState {
         active_slug: String,
         installed: Vec<String>,
     },
+    /// Windows OCR requires the beta's default local vision model even when a
+    /// text model is already installed for chat.
+    MissingRequiredModel {
+        required_slug: String,
+        installed: Vec<String>,
+    },
 }
 
 /// Pure state-machine derivation: maps the result of probing `/api/tags`
@@ -439,6 +445,19 @@ pub async fn check_model_setup(
     };
 
     let state = derive_model_setup_state(installed_result, persisted.as_deref());
+
+    #[cfg(target_os = "windows")]
+    if let ModelSetupState::Ready { ref installed, .. } = state {
+        if !installed
+            .iter()
+            .any(|model| model == crate::ocr::WINDOWS_OCR_MODEL)
+        {
+            return Ok(ModelSetupState::MissingRequiredModel {
+                required_slug: crate::ocr::WINDOWS_OCR_MODEL.to_string(),
+                installed: installed.clone(),
+            });
+        }
+    }
 
     if let ModelSetupState::Ready {
         ref active_slug,
@@ -1388,6 +1407,20 @@ mod tests {
                 "state": "ready",
                 "active_slug": "gemma4:e2b",
                 "installed": ["gemma4:e2b"],
+            })
+        );
+
+        let missing = serde_json::to_value(ModelSetupState::MissingRequiredModel {
+            required_slug: "gemma4:e2b".to_string(),
+            installed: vec!["phi4:14b".to_string()],
+        })
+        .unwrap();
+        assert_eq!(
+            missing,
+            serde_json::json!({
+                "state": "missing_required_model",
+                "required_slug": "gemma4:e2b",
+                "installed": ["phi4:14b"],
             })
         );
     }

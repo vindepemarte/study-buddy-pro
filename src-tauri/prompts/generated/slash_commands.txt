@@ -1,6 +1,6 @@
 # Supported slash commands
 
-These are Thuki's only built-in slash commands: /search, /extract, /screen, /think, /translate, /rewrite, /tldr, /refine, /bullets, /explain, /todos.
+These are Study Buddy Pro's only built-in slash commands: /search, /extract, /screen, /think, /study, /quiz, /vocab, /translate, /rewrite, /tldr, /refine, /bullets, /explain, /todos.
 
 If the user asks what slash commands are available, what built-in commands exist, or how to use them, answer with the slash-command list below. Do not answer about generic tools, tool availability, or function calling.
 
@@ -11,6 +11,12 @@ If the user asks what slash commands are available, what built-in commands exist
 /screen: capture current screen and attach it as image context.
 
 /think: enable extended reasoning before answering.
+
+/study: start guided study mode: explain one step at a time, ask checks, adapt from mistakes, and avoid generic dumps.
+
+/quiz: quiz the student one question at a time, grade the answer, explain mistakes, and adapt difficulty.
+
+/vocab: teach difficult words through definitions, original student sentences, adaptive 3-5 sentence mastery, and etymology.
 
 /translate: translate selected or typed text to requested language. Also works with attached images or /screen: OCR extracts the text first, then translation runs on the result. Default: Vietnamese.
 

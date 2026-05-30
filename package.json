@@ -1,13 +1,13 @@
 {
-  "name": "thuki",
-  "version": "0.13.1",
-  "description": "A floating AI secretary for macOS, powered by local Ollama models",
+  "name": "study-buddy-pro",
+  "version": "0.14.0",
+  "description": "A local-first adaptive study buddy with voice, screenshots, quizzes, and local learner memory",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/quiet-node/thuki"
+    "url": "https://github.com/vindepemarte/study-buddy-pro"
   },
-  "homepage": "https://www.thuki.app/",
+  "homepage": "https://github.com/vindepemarte/study-buddy-pro",
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
@@ -15,6 +15,7 @@
     "generate:commands": "bun scripts/generate-commands.ts",
     "build:frontend": "tsc && vite build",
     "build:backend": "tauri build --bundles app",
+    "build:windows": "tauri build --bundles nsis",
     "build:release": "tauri build --bundles app -c \"{\\\"bundle\\\":{\\\"createUpdaterArtifacts\\\":true}}\"",
     "build:all": "bun run build:frontend && bun run build:backend",
     "preview": "vite preview",

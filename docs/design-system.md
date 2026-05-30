@@ -7,7 +7,7 @@ Use the color tokens, typography, and motion principles exactly as specified.
 
 ## 1. Product Identity
 
-**Website:** [thuki.app](https://www.thuki.app/)
+**Repository:** [Study Buddy Pro](https://github.com/vindepemarte/study-buddy-pro)
 
 **Name:** Thuki (pronounced "too-kee", from Vietnamese "thư kí" meaning secretary)
 

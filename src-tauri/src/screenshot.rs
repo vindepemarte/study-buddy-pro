@@ -26,12 +26,28 @@ use tauri::Manager;
 /// Returns a unique `/tmp/<uuid>-thuki.png` path for a single screenshot capture.
 /// A new UUID is generated on every call, preventing collisions.
 pub fn temp_screenshot_path() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        return std::env::temp_dir().join(format!("{}-study-buddy-pro.png", uuid::Uuid::new_v4()));
+    }
     PathBuf::from(format!("/tmp/{}-thuki.png", uuid::Uuid::new_v4()))
 }
 
 /// Encodes raw bytes to a standard base64 string for IPC transfer.
 pub fn encode_as_base64(bytes: &[u8]) -> String {
     BASE64.encode(bytes)
+}
+
+fn encode_rgba_png(width: u32, height: u32, rgba_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    let buf = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba_bytes)
+        .ok_or_else(|| "Failed to create image buffer from captured pixels.".to_string())?;
+    let dynamic = image::DynamicImage::ImageRgba8(buf);
+
+    let mut png: Vec<u8> = Vec::new();
+    dynamic
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|e| format!("Failed to encode screen capture as PNG: {e}"))?;
+    Ok(png)
 }
 
 /// Converts a captured screenshot temp file into a base64-encoded PNG string.
@@ -79,34 +95,62 @@ pub async fn capture_screenshot_command(
 
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    let path = temp_screenshot_path();
-    let path_str = path
-        .to_str()
-        .ok_or_else(|| "temp path is not valid UTF-8".to_string())?;
+    #[cfg(target_os = "macos")]
+    let result = {
+        let path = temp_screenshot_path();
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| "temp path is not valid UTF-8".to_string())?;
 
-    // Ignore exit status: user cancellation exits 0 but creates no file.
-    let _ = std::process::Command::new("screencapture")
-        .args(["-i", "-x", path_str])
-        .status();
+        // Ignore exit status: user cancellation exits 0 but creates no file.
+        let _ = std::process::Command::new("screencapture")
+            .args(["-i", "-x", path_str])
+            .status();
+
+        process_screenshot_result(&path)
+    };
+
+    #[cfg(target_os = "windows")]
+    let result = {
+        let (width, height, rgba_bytes) = capture_full_screen_pixels(None)?;
+        let png = encode_rgba_png(width, height, rgba_bytes)?;
+        Ok(Some(encode_as_base64(&png)))
+    };
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let result: Result<Option<String>, String> = Err(
+        "interactive screenshot capture is only implemented for macOS and Windows beta builds."
+            .to_string(),
+    );
 
     // Re-show on the main thread via show_and_make_key() so the NSPanel
     // becomes the key window, guaranteeing the WebView textarea receives
     // keyboard focus (mirrors the pattern in lib.rs).
     let show_handle = app_handle.clone();
     let _ = app_handle.run_on_main_thread(move || {
-        use tauri_nspanel::ManagerExt;
-        match show_handle.get_webview_panel("main") {
-            Ok(panel) => panel.show_and_make_key(),
-            Err(_) => {
-                if let Some(w) = show_handle.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
+        #[cfg(target_os = "macos")]
+        {
+            use tauri_nspanel::ManagerExt;
+            match show_handle.get_webview_panel("main") {
+                Ok(panel) => panel.show_and_make_key(),
+                Err(_) => {
+                    if let Some(w) = show_handle.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
                 }
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Some(w) = show_handle.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
             }
         }
     });
 
-    process_screenshot_result(&path)
+    result
 }
 
 // ─── Full-screen silent capture (macOS) ────────────────────────────────────
@@ -407,10 +451,121 @@ fn capture_full_screen_pixels(anchor: Option<(f64, f64)>) -> Result<(u32, u32, V
     capture_full_screen_raw(anchor)
 }
 
-/// Non-macOS stub: full-screen capture is macOS-only.
-#[cfg(not(target_os = "macos"))]
+/// Windows full-screen capture using GDI.
+///
+/// Captures the virtual desktop so multi-monitor setups still provide useful
+/// context. The caller hides Study Buddy Pro briefly before invoking this path
+/// so the app does not appear in its own screenshot.
+#[cfg(target_os = "windows")]
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn capture_full_screen_pixels(_anchor: Option<(f64, f64)>) -> Result<(u32, u32, Vec<u8>), String> {
-    Err("full-screen capture is only supported on macOS".to_string())
+    use std::mem::size_of;
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::Graphics::Gdi::{
+        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
+        GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BI_RGB, CAPTUREBLT, DIB_RGB_COLORS,
+        HGDIOBJ, SRCCOPY,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+        SM_YVIRTUALSCREEN,
+    };
+
+    unsafe {
+        let x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        let height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        if width <= 0 || height <= 0 {
+            return Err("Windows screen capture found no active display.".to_string());
+        }
+
+        let hwnd: HWND = null_mut();
+        let screen_dc = GetDC(hwnd);
+        if screen_dc.is_null() {
+            return Err("Windows screen capture failed to get the screen DC.".to_string());
+        }
+
+        let mem_dc = CreateCompatibleDC(screen_dc);
+        if mem_dc.is_null() {
+            ReleaseDC(hwnd, screen_dc);
+            return Err("Windows screen capture failed to create a memory DC.".to_string());
+        }
+
+        let bitmap = CreateCompatibleBitmap(screen_dc, width, height);
+        if bitmap.is_null() {
+            DeleteDC(mem_dc);
+            ReleaseDC(hwnd, screen_dc);
+            return Err("Windows screen capture failed to create a bitmap.".to_string());
+        }
+
+        let old = SelectObject(mem_dc, bitmap as HGDIOBJ);
+        let copied = BitBlt(
+            mem_dc,
+            0,
+            0,
+            width,
+            height,
+            screen_dc,
+            x,
+            y,
+            SRCCOPY | CAPTUREBLT,
+        );
+        if copied == 0 {
+            if !old.is_null() {
+                SelectObject(mem_dc, old);
+            }
+            DeleteObject(bitmap as HGDIOBJ);
+            DeleteDC(mem_dc);
+            ReleaseDC(hwnd, screen_dc);
+            return Err("Windows screen capture BitBlt failed.".to_string());
+        }
+
+        let mut info = BITMAPINFO::default();
+        info.bmiHeader.biSize =
+            size_of::<windows_sys::Win32::Graphics::Gdi::BITMAPINFOHEADER>() as u32;
+        info.bmiHeader.biWidth = width;
+        info.bmiHeader.biHeight = -height; // top-down DIB
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+
+        let mut pixel_bytes = vec![0u8; width as usize * height as usize * 4];
+        let lines = GetDIBits(
+            mem_dc,
+            bitmap,
+            0,
+            height as u32,
+            pixel_bytes.as_mut_ptr().cast(),
+            &mut info,
+            DIB_RGB_COLORS,
+        );
+
+        if !old.is_null() {
+            SelectObject(mem_dc, old);
+        }
+        DeleteObject(bitmap as HGDIOBJ);
+        DeleteDC(mem_dc);
+        ReleaseDC(hwnd, screen_dc);
+
+        if lines == 0 {
+            return Err("Windows screen capture failed to read bitmap pixels.".to_string());
+        }
+
+        // GDI returns BGRA bytes for a 32-bit DIB; image::Rgba expects RGBA.
+        for chunk in pixel_bytes.chunks_exact_mut(4) {
+            chunk.swap(0, 2);
+        }
+
+        Ok((width as u32, height as u32, pixel_bytes))
+    }
+}
+
+/// Linux is not a first-class beta target yet.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn capture_full_screen_pixels(_anchor: Option<(f64, f64)>) -> Result<(u32, u32, Vec<u8>), String> {
+    Err("full-screen capture is only implemented for macOS and Windows beta builds.".to_string())
 }
 
 /// Reads the `CGDirectDisplayID` of the `NSScreen` the given `NSWindow` lives
@@ -499,6 +654,14 @@ pub async fn capture_full_screen_command(
     // strictly main-thread-only.
     let main_window = app_handle.get_webview_window("main");
 
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(w) = main_window.as_ref() {
+            let _ = w.hide();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(140)).await;
+    }
+
     // Phase 1: Capture raw RGBA pixels on the main thread (CoreGraphics
     // requirement). Returns (width, height, rgba_bytes).
     //
@@ -525,23 +688,25 @@ pub async fn capture_full_screen_command(
         })
         .map_err(|e| format!("failed to dispatch capture to main thread: {e}"))?;
 
-    let (width, height, rgba_bytes) = rx
+    let capture_result = rx
         .await
-        .map_err(|_| "main thread capture channel closed unexpectedly".to_string())??;
+        .map_err(|_| "main thread capture channel closed unexpectedly".to_string())
+        .and_then(|inner| inner);
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(w) = main_window.as_ref() {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    }
+
+    let (width, height, rgba_bytes) = capture_result?;
 
     // Phase 2: Encode to PNG and save via the images pipeline on a blocking
     // thread so the main thread stays responsive.
     let saved_path = tokio::task::spawn_blocking(move || {
-        let buf =
-            image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba_bytes)
-                .ok_or_else(|| "Failed to create image buffer from captured pixels.".to_string())?;
-        let dynamic = image::DynamicImage::ImageRgba8(buf);
-
-        let mut png: Vec<u8> = Vec::new();
-        dynamic
-            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
-            .map_err(|e| format!("Failed to encode screen capture as PNG: {e}"))?;
-
+        let png = encode_rgba_png(width, height, rgba_bytes)?;
         crate::images::save_image(&base_dir, &png)
     })
     .await

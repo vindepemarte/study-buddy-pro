@@ -1,6 +1,6 @@
 # How Thuki's `/search` Works: A Complete Technical Guide
 
-> **Website:** [thuki.app](https://www.thuki.app/) — Learn more about Thuki.
+> **Repository:** [Study Buddy Pro](https://github.com/vindepemarte/study-buddy-pro).
 
 A deep dive into Thuki's agentic RAG search pipeline: how retrieval-augmented generation, iterative reasoning, and local-first infrastructure combine to answer questions from live web sources, entirely on your machine.
 

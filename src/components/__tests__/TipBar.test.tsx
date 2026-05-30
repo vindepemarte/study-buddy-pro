@@ -79,7 +79,7 @@ describe('TipBar', () => {
       <TipBar
         tip={{
           text: 'Click here to learn how to tune Context Window',
-          url: 'https://github.com/quiet-node/thuki/blob/main/docs/tuning-context-window.md',
+          url: 'https://github.com/vindepemarte/study-buddy-pro/blob/main/docs/tuning-context-window.md',
         }}
         tipKey={0}
       />,
@@ -88,7 +88,7 @@ describe('TipBar', () => {
     expect(bar.tagName).toBe('BUTTON');
     fireEvent.click(bar);
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://github.com/quiet-node/thuki/blob/main/docs/tuning-context-window.md',
+      url: 'https://github.com/vindepemarte/study-buddy-pro/blob/main/docs/tuning-context-window.md',
     });
   });
 
@@ -97,7 +97,7 @@ describe('TipBar', () => {
       <TipBar
         tip={{
           text: 'Click here to learn how to tune Context Window',
-          url: 'https://github.com/quiet-node/thuki',
+          url: 'https://github.com/vindepemarte/study-buddy-pro',
         }}
         tipKey={0}
       />,

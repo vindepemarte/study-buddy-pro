@@ -1,7 +1,7 @@
 /*!
  * SQLite persistence layer for conversation history.
  *
- * Stores conversations and messages in `~/.thuki/thuki.db` using rusqlite
+ * Stores conversations and messages in the app data directory using rusqlite
  * with WAL journal mode for concurrent read access during streaming writes.
  *
  * All public functions accept a `&Connection` and are synchronous - callers
@@ -61,9 +61,9 @@ pub struct PersistedMessage {
     pub created_at: i64,
 }
 
-/// Opens (or creates) the SQLite database at `<app_data_dir>/thuki.db` and
-/// runs migrations. If an existing database is found at the legacy location
-/// (`~/.thuki/thuki.db`), it is moved to the new location automatically.
+/// Opens (or creates) the SQLite database at `<app_data_dir>/study_buddy_pro.db`
+/// and runs migrations. Study Buddy Pro intentionally does not migrate Thuki
+/// data automatically because it uses a separate app identity.
 ///
 /// # Errors
 ///
@@ -74,10 +74,7 @@ pub fn open_database(app_data_dir: &std::path::Path) -> SqlResult<Connection> {
     std::fs::create_dir_all(app_data_dir)
         .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
 
-    let db_path = app_data_dir.join("thuki.db");
-
-    // One-time migration: move database from the legacy ~/.thuki/ location.
-    migrate_legacy_db(&db_path);
+    let db_path = app_data_dir.join("study_buddy_pro.db");
 
     let conn = Connection::open(&db_path)?;
     conn.execute_batch("PRAGMA journal_mode = WAL;")?;
@@ -96,9 +93,10 @@ pub fn open_in_memory() -> SqlResult<Connection> {
     Ok(conn)
 }
 
-/// Moves the database from `~/.thuki/thuki.db` to the Tauri app data
-/// directory if the legacy file exists and the target does not.
+/// Legacy Thuki migration helper retained only for unit coverage of the old
+/// path. Study Buddy Pro does not call this automatically.
 #[cfg_attr(coverage_nightly, coverage(off))]
+#[allow(dead_code)]
 fn migrate_legacy_db(new_path: &std::path::Path) {
     if new_path.exists() {
         return;
@@ -206,6 +204,43 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
         "  ON conversations(updated_at DESC);",
         "CREATE TABLE IF NOT EXISTS app_config (",
         "  key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS learner_profile (",
+        "  id TEXT PRIMARY KEY, display_name TEXT, primary_language TEXT,",
+        "  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, meta TEXT);",
+        "CREATE TABLE IF NOT EXISTS study_sessions (",
+        "  id TEXT PRIMARY KEY, conversation_id TEXT, subject TEXT, source TEXT,",
+        "  status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,",
+        "  summary TEXT);",
+        "CREATE TABLE IF NOT EXISTS learning_events (",
+        "  id TEXT PRIMARY KEY, session_id TEXT REFERENCES study_sessions(id) ON DELETE CASCADE,",
+        "  kind TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS vocabulary_terms (",
+        "  id TEXT PRIMARY KEY, term TEXT NOT NULL, lang TEXT,",
+        "  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS vocabulary_definitions (",
+        "  id TEXT PRIMARY KEY, term_id TEXT NOT NULL REFERENCES vocabulary_terms(id) ON DELETE CASCADE,",
+        "  definition_index INTEGER NOT NULL, definition TEXT NOT NULL, etymology TEXT,",
+        "  mastery_required INTEGER NOT NULL DEFAULT 3, mastered_at INTEGER);",
+        "CREATE TABLE IF NOT EXISTS vocabulary_attempts (",
+        "  id TEXT PRIMARY KEY, definition_id TEXT REFERENCES vocabulary_definitions(id) ON DELETE CASCADE,",
+        "  session_id TEXT REFERENCES study_sessions(id) ON DELETE SET NULL, sentence TEXT NOT NULL,",
+        "  correct INTEGER NOT NULL, feedback TEXT, created_at INTEGER NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS quiz_attempts (",
+        "  id TEXT PRIMARY KEY, session_id TEXT REFERENCES study_sessions(id) ON DELETE CASCADE,",
+        "  question TEXT NOT NULL, answer TEXT NOT NULL, correct INTEGER NOT NULL,",
+        "  feedback TEXT, created_at INTEGER NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS mastery_state (",
+        "  id TEXT PRIMARY KEY, scope TEXT NOT NULL, item_id TEXT NOT NULL,",
+        "  score REAL NOT NULL DEFAULT 0, correct_count INTEGER NOT NULL DEFAULT 0,",
+        "  incorrect_count INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL);",
+        "CREATE INDEX IF NOT EXISTS idx_study_sessions_updated",
+        "  ON study_sessions(updated_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_learning_events_session",
+        "  ON learning_events(session_id, created_at);",
+        "CREATE INDEX IF NOT EXISTS idx_vocab_terms_term",
+        "  ON vocabulary_terms(term);",
+        "CREATE INDEX IF NOT EXISTS idx_mastery_state_item",
+        "  ON mastery_state(scope, item_id);",
     );
     conn.execute_batch(SCHEMA_DDL)?;
 

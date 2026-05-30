@@ -5,5 +5,5 @@
 ///
 /// This function calls into the common core library to start the application.
 fn main() {
-    thuki_agent_lib::run()
+    study_buddy_pro_lib::run()
 }

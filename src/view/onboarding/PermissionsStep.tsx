@@ -360,7 +360,7 @@ export function PermissionsStep() {
             src={thukiLogo}
             width={64}
             height={64}
-            alt="Thuki"
+            alt="Study Buddy Pro"
             style={{
               objectFit: 'contain',
               pointerEvents: 'none',
@@ -382,7 +382,7 @@ export function PermissionsStep() {
             margin: '0 0 20px',
           }}
         >
-          {"Let's get Thuki set up"}
+          {"Let's get Study Buddy Pro set up"}
         </h1>
 
         {/* Steps */}
@@ -425,7 +425,8 @@ export function PermissionsStep() {
                 Accessibility
               </div>
               <div style={{ fontSize: 12, color: '#6b6660', lineHeight: 1.5 }}>
-                Lets Thuki respond to activator key (<KeyChip label="⌃" />
+                Lets Study Buddy Pro respond to activator key (
+                <KeyChip label="⌃" />
                 <KeyChip label="⌃" />)
               </div>
             </div>
@@ -512,9 +513,9 @@ export function PermissionsStep() {
               <>
                 <CTAButton
                   onClick={handleQuitAndRelaunch}
-                  aria-label="Quit and Reopen Thuki"
+                  aria-label="Quit and Reopen Study Buddy Pro"
                 >
-                  Quit & Reopen Thuki
+                  Quit & Reopen Study Buddy Pro
                 </CTAButton>
                 <p
                   style={{

@@ -27,7 +27,8 @@ use super::defaults::{
     BOUNDS_PIPELINE_WALL_CLOCK_BUDGET_S, BOUNDS_QUOTE_MAX_CONTEXT_LENGTH,
     BOUNDS_QUOTE_MAX_DISPLAY_CHARS, BOUNDS_QUOTE_MAX_DISPLAY_LINES, BOUNDS_SEARXNG_MAX_RESULTS,
     BOUNDS_TEXT_BASE_PX, BOUNDS_TEXT_LETTER_SPACING_PX, BOUNDS_TEXT_LINE_HEIGHT, BOUNDS_TIMEOUT_S,
-    BOUNDS_TOP_K_URLS, BOUNDS_UPDATER_CHECK_INTERVAL_HOURS, DEFAULT_JUDGE_TIMEOUT_S,
+    BOUNDS_TOP_K_URLS, BOUNDS_UPDATER_CHECK_INTERVAL_HOURS, BOUNDS_VOICE_MAX_CHUNK_LENGTH,
+    BOUNDS_VOICE_SPEED, BOUNDS_VOICE_STEPS, DEFAULT_JUDGE_TIMEOUT_S,
     DEFAULT_KEEP_WARM_INACTIVITY_MINUTES, DEFAULT_MAX_CHAT_HEIGHT, DEFAULT_MAX_IMAGES,
     DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX, DEFAULT_OLLAMA_URL, DEFAULT_OVERLAY_WIDTH,
     DEFAULT_PIPELINE_WALL_CLOCK_BUDGET_S, DEFAULT_QUOTE_MAX_CONTEXT_LENGTH,
@@ -37,7 +38,8 @@ use super::defaults::{
     DEFAULT_SEARXNG_URL, DEFAULT_SYSTEM_PROMPT_BASE, DEFAULT_TEXT_BASE_PX,
     DEFAULT_TEXT_FONT_WEIGHT, DEFAULT_TEXT_LETTER_SPACING_PX, DEFAULT_TEXT_LINE_HEIGHT,
     DEFAULT_TOP_K_URLS, DEFAULT_UPDATER_CHECK_INTERVAL_HOURS, DEFAULT_UPDATER_MANIFEST_URL,
-    SLASH_COMMAND_PROMPT_APPENDIX,
+    DEFAULT_VOICE_BASE_URL, DEFAULT_VOICE_LANG, DEFAULT_VOICE_MAX_CHUNK_LENGTH, DEFAULT_VOICE_NAME,
+    DEFAULT_VOICE_SPEED, DEFAULT_VOICE_STEPS, SLASH_COMMAND_PROMPT_APPENDIX,
 };
 use super::error::ConfigError;
 use super::schema::AppConfig;
@@ -306,6 +308,35 @@ pub(crate) fn resolve(config: &mut AppConfig) {
         );
         config.search.reader_batch_timeout_s = corrected;
     }
+
+    // Voice section.
+    if config.voice.base_url.trim().is_empty() {
+        config.voice.base_url = DEFAULT_VOICE_BASE_URL.to_string();
+    }
+    if config.voice.voice.trim().is_empty() {
+        config.voice.voice = DEFAULT_VOICE_NAME.to_string();
+    }
+    if config.voice.lang.trim().is_empty() {
+        config.voice.lang = DEFAULT_VOICE_LANG.to_string();
+    }
+    clamp_u32(
+        &mut config.voice.steps,
+        BOUNDS_VOICE_STEPS,
+        DEFAULT_VOICE_STEPS,
+        "voice.steps",
+    );
+    clamp_f64(
+        &mut config.voice.speed,
+        BOUNDS_VOICE_SPEED,
+        DEFAULT_VOICE_SPEED,
+        "voice.speed",
+    );
+    clamp_u32(
+        &mut config.voice.max_chunk_length,
+        BOUNDS_VOICE_MAX_CHUNK_LENGTH,
+        DEFAULT_VOICE_MAX_CHUNK_LENGTH,
+        "voice.max_chunk_length",
+    );
 
     // Debug section: boolean flag has no resolution step (any value is valid).
 

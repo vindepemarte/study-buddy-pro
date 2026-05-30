@@ -49,6 +49,16 @@ interface RawAppConfig {
     max_display_chars: number;
     max_context_length: number;
   };
+  voice?: {
+    enabled: boolean;
+    auto_speak_study: boolean;
+    base_url: string;
+    voice: string;
+    lang: string;
+    steps: number;
+    speed: number;
+    max_chunk_length: number;
+  };
 }
 
 /** Camel-cased, frontend-friendly view of the configuration. */
@@ -74,6 +84,16 @@ export interface AppConfig {
     maxDisplayChars: number;
     maxContextLength: number;
   };
+  voice: {
+    enabled: boolean;
+    autoSpeakStudy: boolean;
+    baseUrl: string;
+    voice: string;
+    lang: string;
+    steps: number;
+    speed: number;
+    maxChunkLength: number;
+  };
 }
 
 function transform(raw: RawAppConfig): AppConfig {
@@ -97,6 +117,16 @@ function transform(raw: RawAppConfig): AppConfig {
       maxDisplayLines: raw.quote.max_display_lines,
       maxDisplayChars: raw.quote.max_display_chars,
       maxContextLength: raw.quote.max_context_length,
+    },
+    voice: {
+      enabled: raw.voice?.enabled ?? false,
+      autoSpeakStudy: raw.voice?.auto_speak_study ?? false,
+      baseUrl: raw.voice?.base_url ?? 'http://127.0.0.1:7788',
+      voice: raw.voice?.voice ?? 'M1',
+      lang: raw.voice?.lang ?? 'auto',
+      steps: raw.voice?.steps ?? 8,
+      speed: raw.voice?.speed ?? 1.05,
+      maxChunkLength: raw.voice?.max_chunk_length ?? 300,
     },
   };
 }
@@ -225,5 +255,15 @@ export const DEFAULT_CONFIG: AppConfig = {
     maxDisplayLines: 4,
     maxDisplayChars: 300,
     maxContextLength: 4096,
+  },
+  voice: {
+    enabled: true,
+    autoSpeakStudy: true,
+    baseUrl: 'http://127.0.0.1:7788',
+    voice: 'M1',
+    lang: 'auto',
+    steps: 8,
+    speed: 1.05,
+    maxChunkLength: 300,
   },
 };

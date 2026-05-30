@@ -53,7 +53,7 @@ export function renderCommandsMarkdown(): string {
     '',
     '# Commands',
     '',
-    'Website: [thuki.app](https://www.thuki.app/)',
+    'Repository: [study-buddy-pro](https://github.com/vindepemarte/study-buddy-pro)',
     '',
     'Commands are written as whole-word `/` triggers anywhere in your message. Press `/` to open the command suggestion menu, then Tab to complete or Enter to select.',
     '',
@@ -65,11 +65,11 @@ export function renderCommandsMarkdown(): string {
     '2. **No highlighted text + typed text after command:** typed text is the input',
     '3. **Both present:** highlighted text is the primary input; typed text is appended as an additional instruction',
     '',
-    'This means you can highlight text anywhere on screen, summon Thuki with double-tap Control, type a command, and hit Enter without retyping the selected content.',
+    'This means you can highlight text anywhere on screen, summon Study Buddy Pro with double-tap Control on macOS or Ctrl+Space on Windows, type a command, and hit Enter without retyping the selected content.',
     '',
     '## Image input on text-only models',
     '',
-    '`/extract`, `/tldr`, `/translate`, `/rewrite`, `/refine`, `/bullets`, `/todos`, and `/explain` read attached images locally via macOS Vision OCR, so they work even when the active model has no vision capability. Only plain submits and `/screen` alone require a vision model to read images. See [OCR-supported commands](./ocr-commands.md) for the full list and details.',
+    '`/extract`, `/tldr`, `/translate`, `/rewrite`, `/refine`, `/bullets`, `/todos`, and `/explain` read attached images through local OCR: macOS Vision on macOS, `gemma4:e2b` through Ollama on Windows beta. See [OCR-supported commands](./ocr-commands.md) for the full list and details.',
     '',
     ...COMMANDS.flatMap((command, index) => {
       const section = renderDocsSection(command);
@@ -85,7 +85,7 @@ export function renderSlashCommandPromptAppendix(): string {
   return [
     '# Supported slash commands',
     '',
-    `These are Thuki's only built-in slash commands: ${SLASH_COMMAND_LIST}.`,
+    `These are Study Buddy Pro's only built-in slash commands: ${SLASH_COMMAND_LIST}.`,
     '',
     'If the user asks what slash commands are available, what built-in commands exist, or how to use them, answer with the slash-command list below. Do not answer about generic tools, tool availability, or function calling.',
     '',

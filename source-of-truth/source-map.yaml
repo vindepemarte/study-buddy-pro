@@ -1,0 +1,12 @@
+app:
+  name: Study Buddy Pro
+  status: decided
+  repo: https://github.com/vindepemarte/study-buddy-pro
+  bundle_identifier: com.vindepemarte.studybuddypro
+truth:
+  product: source-of-truth/01-product.md
+  flows: source-of-truth/03-user-flows.md
+  architecture: source-of-truth/04-tech-architecture.md
+  data_model: source-of-truth/05-data-model.md
+  api_contracts: source-of-truth/06-api-contracts.md
+  open_questions: source-of-truth/09-open-questions.md

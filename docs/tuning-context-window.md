@@ -4,7 +4,7 @@ The Context Window slider in Settings goes up to 1 M tokens, but the value that'
 
 > macOS only. Thuki is a Mac app and the steps below assume Apple Silicon (M1/M2/M3/M4/M5).
 >
-> See [thuki.app](https://www.thuki.app/) for project info, downloads, and documentation.
+> See [Study Buddy Pro](https://github.com/vindepemarte/study-buddy-pro) for project info and documentation.
 
 ## Quick vocabulary
 
