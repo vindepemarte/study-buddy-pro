@@ -28,9 +28,12 @@ use tauri::Manager;
 pub fn temp_screenshot_path() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        return std::env::temp_dir().join(format!("{}-study-buddy-pro.png", uuid::Uuid::new_v4()));
+        std::env::temp_dir().join(format!("{}-study-buddy-pro.png", uuid::Uuid::new_v4()))
     }
-    PathBuf::from(format!("/tmp/{}-thuki.png", uuid::Uuid::new_v4()))
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from(format!("/tmp/{}-thuki.png", uuid::Uuid::new_v4()))
+    }
 }
 
 /// Encodes raw bytes to a standard base64 string for IPC transfer.
@@ -652,7 +655,10 @@ pub async fn capture_full_screen_command(
     // The handle is read here (off the main thread) but only dereferenced
     // inside the main-thread closure below: AppKit window/screen APIs are
     // strictly main-thread-only.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let main_window = app_handle.get_webview_window("main");
+    #[cfg(target_os = "macos")]
+    let capture_window = main_window.clone();
 
     #[cfg(target_os = "windows")]
     {
@@ -674,16 +680,13 @@ pub async fn capture_full_screen_command(
     app_handle
         .run_on_main_thread(move || {
             #[cfg(target_os = "macos")]
-            let anchor = main_window
+            let anchor = capture_window
                 .as_ref()
                 .and_then(|w| w.ns_window().ok())
                 .and_then(|p| unsafe { nswindow_display_id(p) })
                 .map(|id| display_bounds_center(crate::cg_displays::bounds_for_display(id)));
             #[cfg(not(target_os = "macos"))]
-            let anchor: Option<(f64, f64)> = {
-                let _ = &main_window;
-                None
-            };
+            let anchor: Option<(f64, f64)> = None;
             tx.send(capture_full_screen_pixels(anchor)).ok();
         })
         .map_err(|e| format!("failed to dispatch capture to main thread: {e}"))?;

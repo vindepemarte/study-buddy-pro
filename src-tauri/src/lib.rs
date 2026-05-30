@@ -48,7 +48,7 @@ use std::sync::{
 
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Listener, Manager, RunEvent, WebviewWindow,
+    Emitter, Listener, Manager, RunEvent,
 };
 
 #[cfg(target_os = "macos")]
@@ -1102,7 +1102,7 @@ fn finish_onboarding(
 ///   elevation effect independent of key-window state.
 #[cfg(target_os = "macos")]
 fn init_panel(app_handle: &tauri::AppHandle) {
-    let window: WebviewWindow = app_handle
+    let window: tauri::WebviewWindow = app_handle
         .get_webview_window("main")
         .expect("main window must exist at setup time");
 
