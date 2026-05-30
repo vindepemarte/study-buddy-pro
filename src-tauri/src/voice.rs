@@ -105,9 +105,17 @@ fn spawn_player(path: &PathBuf) -> Result<Child, String> {
     #[cfg(target_os = "windows")]
     {
         let escaped = path.to_string_lossy().replace('\'', "''");
-        let script = format!("(New-Object Media.SoundPlayer '{escaped}').PlaySync()");
-        return Command::new("powershell")
-            .args(["-NoProfile", "-Command", &script])
+        let script = format!(
+            "$player = New-Object System.Media.SoundPlayer -ArgumentList '{escaped}'; $player.Load(); $player.PlaySync()"
+        );
+        return Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &script,
+            ])
             .spawn()
             .map_err(|e| format!("failed to start Windows audio playback: {e}"));
     }
