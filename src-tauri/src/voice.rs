@@ -3,12 +3,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Manager, State};
 
 use crate::config::AppConfig;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub struct VoicePlaybackState {
     child: Mutex<Option<Child>>,
@@ -108,7 +114,8 @@ fn spawn_player(path: &PathBuf) -> Result<Child, String> {
         let script = format!(
             "$player = New-Object System.Media.SoundPlayer -ArgumentList '{escaped}'; $player.Load(); $player.PlaySync()"
         );
-        return Command::new("powershell.exe")
+        let mut command = Command::new("powershell.exe");
+        command
             .args([
                 "-NoProfile",
                 "-ExecutionPolicy",
@@ -116,6 +123,8 @@ fn spawn_player(path: &PathBuf) -> Result<Child, String> {
                 "-Command",
                 &script,
             ])
+            .creation_flags(CREATE_NO_WINDOW);
+        return command
             .spawn()
             .map_err(|e| format!("failed to start Windows audio playback: {e}"));
     }
@@ -345,6 +354,10 @@ fn spawn_supertonic_manager(
         .current_dir(repo)
         .stdout(stdout)
         .stderr(stderr);
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
     command
         .spawn()
         .map(|_| ())

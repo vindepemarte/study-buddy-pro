@@ -187,7 +187,9 @@ def start_server(wait: bool = True) -> int:
         "env": server_env(config),
     }
     if platform.system() == "Windows":
-        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+        creationflags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        popen_kwargs["creationflags"] = creationflags
     else:
         popen_kwargs["start_new_session"] = True
 
