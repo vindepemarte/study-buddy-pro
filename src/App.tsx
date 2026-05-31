@@ -50,6 +50,9 @@ import type { AttachedImage } from './types/image';
 import { MAX_IMAGE_SIZE_BYTES } from './types/image';
 import type {
   ContextPromptResponse,
+  MlxVlmDescribeResponse,
+  MlxVlmInstallResult,
+  MlxVlmStatus,
   SaveContextResponse,
   StudyPackIndexResponse,
   StudyPackSummary,
@@ -510,8 +513,20 @@ function App() {
   const [studyPackName, setStudyPackName] = useState('');
   const [studyPackAuthority, setStudyPackAuthority] = useState('');
   const [indexingPackId, setIndexingPackId] = useState<string | null>(null);
+  const [mlxVlmStatus, setMlxVlmStatus] = useState<MlxVlmStatus | null>(null);
+  const [mlxVlmBusy, setMlxVlmBusy] = useState(false);
+  const [mlxVlmMessage, setMlxVlmMessage] = useState<string | null>(null);
   const autoIndexedPacksRef = useRef<Set<string>>(new Set());
   const studyPackImageBackfillRef = useRef(false);
+
+  const refreshMlxVlmStatus = useCallback(async () => {
+    try {
+      const status = await invoke<MlxVlmStatus>('mlx_vlm_status');
+      setMlxVlmStatus(status);
+    } catch {
+      setMlxVlmStatus(null);
+    }
+  }, []);
 
   const refreshStudyPacks = useCallback(async () => {
     try {
@@ -533,10 +548,20 @@ function App() {
   }, [refreshStudyPacks]);
 
   useEffect(() => {
+    void refreshMlxVlmStatus();
+  }, [refreshMlxVlmStatus]);
+
+  useEffect(() => {
     if (!studyPackStatus) return;
     const timer = setTimeout(() => setStudyPackStatus(null), 5000);
     return () => clearTimeout(timer);
   }, [studyPackStatus]);
+
+  useEffect(() => {
+    if (!mlxVlmMessage) return;
+    const timer = setTimeout(() => setMlxVlmMessage(null), 7000);
+    return () => clearTimeout(timer);
+  }, [mlxVlmMessage]);
 
   /**
    * Persist a completed user/assistant turn to SQLite if the conversation
@@ -2058,6 +2083,29 @@ function App() {
     [refreshStudyPacks, setCaptureError],
   );
 
+  const handleInstallMlxVision = useCallback(async () => {
+    try {
+      setMlxVlmBusy(true);
+      setMlxVlmMessage('Installing MLX Vision...');
+      const result = await invoke<MlxVlmInstallResult>('mlx_vlm_install', {
+        modelId: mlxVlmStatus?.model_id ?? null,
+      });
+      setMlxVlmStatus(result.status);
+      setMlxVlmMessage(
+        result.installed ? 'MLX Vision ready' : result.status.error,
+      );
+    } catch (err) {
+      setMlxVlmMessage(
+        `Could not install MLX Vision: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      void refreshMlxVlmStatus();
+    } finally {
+      setMlxVlmBusy(false);
+    }
+  }, [mlxVlmStatus?.model_id, refreshMlxVlmStatus]);
+
   /** Fires the actual ask() call and cleans up attached images + input. */
   const executeSubmit = useCallback(
     (
@@ -2421,6 +2469,32 @@ function App() {
         return;
       }
 
+      let structuredNotes: string | null = null;
+      if (mlxVlmStatus?.ready) {
+        setStudyPackStatus('MLX Vision reading page...');
+        try {
+          const enrichment = await invoke<MlxVlmDescribeResponse>(
+            'mlx_vlm_describe_images',
+            {
+              request: {
+                imagePaths: readyPaths,
+                ocrText,
+                note: strippedMessage.trim() || null,
+                modelId: mlxVlmStatus.model_id,
+              },
+            },
+          );
+          structuredNotes = enrichment.notes.trim() || null;
+        } catch (err) {
+          setMlxVlmMessage(
+            `MLX Vision skipped: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+          void refreshMlxVlmStatus();
+        }
+      }
+
       let result: SaveContextResponse;
       try {
         result = await invoke<SaveContextResponse>('save_context_from_images', {
@@ -2428,6 +2502,7 @@ function App() {
             packId: pack.id,
             imagePaths: readyPaths,
             ocrText,
+            structuredNotes,
             note: strippedMessage.trim() || null,
             conversationId: getTraceConversationId(),
             sourceKind: hasScreen ? 'screen' : 'attached_image',
@@ -2457,7 +2532,7 @@ function App() {
       setStudyPackStatus(
         `Saved ${result.chunks_saved} context chunk${
           result.chunks_saved === 1 ? '' : 's'
-        } to ${pack.name}`,
+        } to ${pack.name}${structuredNotes ? ' with MLX Vision' : ''}`,
       );
       const savedDisplayPaths =
         result.image_paths.length > 0 ? result.image_paths : readyPaths;
@@ -2467,7 +2542,7 @@ function App() {
         savedDisplayPaths,
         `Saved to **${pack.name}**: ${result.title}\n\n${result.chunks_saved} context chunk${
           result.chunks_saved === 1 ? '' : 's'
-        } ready for grounded checks.`,
+        } ready for grounded checks.${structuredNotes ? '\n\nMLX Vision structured page notes were included.' : ''}`,
       );
     },
     [
@@ -2477,6 +2552,8 @@ function App() {
       addOcrTurn,
       getTraceConversationId,
       refreshStudyPacks,
+      refreshMlxVlmStatus,
+      mlxVlmStatus,
       setSelectedContext,
       setCaptureError,
       quote.maxContextLength,
@@ -4071,6 +4148,28 @@ function App() {
                                   />
                                 </div>
                               )}
+                            {mlxVlmStatus?.supported && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <p className="min-w-0 flex-1 truncate text-[11px] leading-4 text-text-secondary/70">
+                                  {mlxVlmMessage ??
+                                    (mlxVlmStatus.ready
+                                      ? `MLX Vision ready: ${mlxVlmStatus.model_id}`
+                                      : 'MLX Vision can add structured page notes')}
+                                </p>
+                                {!mlxVlmStatus.ready && (
+                                  <button
+                                    type="button"
+                                    onClick={handleInstallMlxVision}
+                                    disabled={mlxVlmBusy || studyPackBusy}
+                                    className="shrink-0 rounded-md border border-surface-border px-2 py-1 text-[11px] font-medium text-text-primary hover:bg-surface-elevated disabled:opacity-50"
+                                  >
+                                    {mlxVlmBusy
+                                      ? 'Installing...'
+                                      : 'Enable MLX'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
                             {isStudyPackFormOpen && (
                               <form
                                 className="mt-2 grid gap-2"

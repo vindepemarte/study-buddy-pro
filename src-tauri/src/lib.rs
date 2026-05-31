@@ -21,6 +21,7 @@ pub mod database;
 pub mod export;
 pub mod history;
 pub mod images;
+pub mod mlx_vlm;
 pub mod models;
 pub mod ocr;
 pub mod onboarding;
@@ -1979,6 +1980,9 @@ pub fn run() {
             study_context::rebuild_study_pack_index,
             study_context::check_answer_from_context,
             study_context::get_study_pack_summary,
+            mlx_vlm::mlx_vlm_status,
+            mlx_vlm::mlx_vlm_install,
+            mlx_vlm::mlx_vlm_describe_images,
             setup::get_setup_readiness,
             setup::start_search_services,
             setup::stop_search_services

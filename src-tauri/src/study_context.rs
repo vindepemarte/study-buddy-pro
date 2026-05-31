@@ -45,6 +45,7 @@ pub struct SaveContextRequest {
     pub pack_id: String,
     pub image_paths: Vec<String>,
     pub ocr_text: String,
+    pub structured_notes: Option<String>,
     pub note: Option<String>,
     pub conversation_id: Option<String>,
     pub source_kind: Option<String>,
@@ -138,6 +139,18 @@ fn summary_from(ocr_text: &str) -> String {
             .join(" "),
         320,
     )
+}
+
+fn indexed_context_text(raw_ocr: &str, structured_notes: Option<&str>) -> String {
+    let structured_notes = structured_notes.map(str::trim).filter(|s| !s.is_empty());
+    match structured_notes {
+        Some(notes) => format!(
+            "[OCR Text]\n{}\n\n[MLX Vision Study Notes]\n{}",
+            raw_ocr.trim(),
+            notes
+        ),
+        None => raw_ocr.trim().to_string(),
+    }
 }
 
 fn tokenize(text: &str) -> Vec<String> {
@@ -574,31 +587,53 @@ fn insert_chunk_fts(
     }
 }
 
+struct IndexItemChunksInput<'a> {
+    item_id: &'a str,
+    pack_id: &'a str,
+    title: &'a str,
+    raw_ocr: &'a str,
+    structured_notes: Option<&'a str>,
+    tags: &'a str,
+    now: i64,
+}
+
 fn index_item_chunks(
     conn: &rusqlite::Connection,
-    item_id: &str,
-    pack_id: &str,
-    title: &str,
-    raw_ocr: &str,
-    tags: &str,
-    now: i64,
+    input: IndexItemChunksInput<'_>,
 ) -> rusqlite::Result<usize> {
-    let chunks = chunk_text(raw_ocr);
+    let indexed_text = indexed_context_text(input.raw_ocr, input.structured_notes);
+    let chunks = chunk_text(&indexed_text);
     for (idx, chunk) in chunks.iter().enumerate() {
         let chunk_id = uuid::Uuid::new_v4().to_string();
         conn.execute(
             "INSERT INTO study_context_chunks \
              (id, item_id, pack_id, chunk_index, chunk_text, source_label, created_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![chunk_id, item_id, pack_id, idx as i64, chunk, title, now],
+            params![
+                chunk_id,
+                input.item_id,
+                input.pack_id,
+                idx as i64,
+                chunk,
+                input.title,
+                input.now
+            ],
         )?;
-        insert_chunk_fts(conn, &chunk_id, item_id, pack_id, title, chunk, tags);
+        insert_chunk_fts(
+            conn,
+            &chunk_id,
+            input.item_id,
+            input.pack_id,
+            input.title,
+            chunk,
+            input.tags,
+        );
     }
     conn.execute(
         "UPDATE study_context_items \
          SET index_status = 'ready', index_error = NULL, indexed_at = ?1 \
          WHERE id = ?2",
-        params![now, item_id],
+        params![input.now, input.item_id],
     )?;
     Ok(chunks.len())
 }
@@ -894,8 +929,14 @@ pub fn save_context_from_images(
     }
 
     let title = title_from(request.note.as_deref(), ocr_text);
-    let summary = summary_from(ocr_text);
-    let tags = serde_json::to_string(&tags_from(ocr_text)).map_err(|e| e.to_string())?;
+    let structured_notes = request
+        .structured_notes
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let indexed_text = indexed_context_text(ocr_text, structured_notes);
+    let summary = summary_from(&indexed_text);
+    let tags = serde_json::to_string(&tags_from(&indexed_text)).map_err(|e| e.to_string())?;
     let durable_paths = durable_image_paths(&app_handle, &request.pack_id, &request.image_paths);
     let image_paths = if durable_paths.is_empty() {
         None
@@ -913,8 +954,8 @@ pub fn save_context_from_images(
 
     conn.execute(
         "INSERT INTO study_context_items \
-         (id, pack_id, conversation_id, title, source_kind, image_paths, raw_ocr, summary, tags, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         (id, pack_id, conversation_id, title, source_kind, image_paths, raw_ocr, structured_notes, summary, tags, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             item_id,
             request.pack_id,
@@ -923,6 +964,7 @@ pub fn save_context_from_images(
             source_kind,
             image_paths,
             ocr_text,
+            structured_notes,
             summary,
             tags,
             now,
@@ -946,12 +988,15 @@ pub fn save_context_from_images(
 
     let chunks_saved = index_item_chunks(
         &conn,
-        &item_id,
-        &request.pack_id,
-        &title,
-        ocr_text,
-        &tags,
-        now,
+        IndexItemChunksInput {
+            item_id: &item_id,
+            pack_id: &request.pack_id,
+            title: &title,
+            raw_ocr: ocr_text,
+            structured_notes,
+            tags: &tags,
+            now,
+        },
     )
     .map_err(|e| e.to_string())?;
     conn.execute(
@@ -1030,7 +1075,7 @@ pub fn rebuild_study_pack_index(
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, raw_ocr, COALESCE(tags, '') \
+            "SELECT id, title, raw_ocr, structured_notes, COALESCE(tags, '') \
              FROM study_context_items \
              WHERE pack_id = ?1 \
              ORDER BY created_at ASC",
@@ -1042,7 +1087,8 @@ pub fn rebuild_study_pack_index(
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
             ))
         })
         .map_err(|e| e.to_string())?
@@ -1053,8 +1099,19 @@ pub fn rebuild_study_pack_index(
     let now = now_millis();
     let mut chunks_saved = 0;
     let mut indexed_items = 0;
-    for (item_id, title, raw_ocr, tags) in &items {
-        match index_item_chunks(&conn, item_id, &target_id, title, raw_ocr, tags, now) {
+    for (item_id, title, raw_ocr, structured_notes, tags) in &items {
+        match index_item_chunks(
+            &conn,
+            IndexItemChunksInput {
+                item_id,
+                pack_id: &target_id,
+                title,
+                raw_ocr,
+                structured_notes: structured_notes.as_deref(),
+                tags,
+                now,
+            },
+        ) {
             Ok(count) => {
                 chunks_saved += count;
                 indexed_items += 1;
@@ -1239,12 +1296,15 @@ mod tests {
 
         let chunks_saved = index_item_chunks(
             &conn,
-            "item1",
-            pack_id,
-            "Warning signs",
-            "Slow down near warning signs. Tram lanes have priority rules.",
-            "[\"warning\",\"tram\"]",
-            now,
+            IndexItemChunksInput {
+                item_id: "item1",
+                pack_id,
+                title: "Warning signs",
+                raw_ocr: "Slow down near warning signs. Tram lanes have priority rules.",
+                structured_notes: Some("Structured MLX notes mention tram priority."),
+                tags: "[\"warning\",\"tram\"]",
+                now,
+            },
         )
         .unwrap();
         assert_eq!(chunks_saved, 1);

@@ -24,6 +24,31 @@ export interface SaveContextResponse {
   image_paths: string[];
 }
 
+export interface MlxVlmStatus {
+  supported: boolean;
+  apple_silicon: boolean;
+  python_available: boolean;
+  runtime_path: string | null;
+  venv_python: string | null;
+  package_installed: boolean;
+  model_id: string;
+  model_cached: boolean;
+  ready: boolean;
+  installed_versions: string | null;
+  error: string | null;
+}
+
+export interface MlxVlmInstallResult {
+  installed: boolean;
+  status: MlxVlmStatus;
+  message: string;
+}
+
+export interface MlxVlmDescribeResponse {
+  model_id: string;
+  notes: string;
+}
+
 export interface RetrievedContextChunk {
   id: string;
   item_id: string;

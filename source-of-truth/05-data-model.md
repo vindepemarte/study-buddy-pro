@@ -23,7 +23,7 @@ Required entities:
 
 Learning events record what the tutor observed: confusion, correct answers, repeated mistakes, topic changes, and mastery progress. These events should make future sessions less generic.
 
-Study Packs store named local context for modules or subjects. Study context items store the original OCR, source kind, source role, durable image paths when available, summary, tags, indexing status/error, indexed timestamp, and optional conversation id.
+Study Packs store named local context for modules or subjects. Study context items store the original OCR, optional MLX Vision structured notes, source kind, source role, durable image paths when available, summary, tags, indexing status/error, indexed timestamp, and optional conversation id.
 
 Study context chunks store retrievable text spans with stable source labels for citation in grounded corrections. The `study_context_fts` virtual table stores chunk/source/tag text for local full-text retrieval and can be rebuilt from persisted items at any time.
 

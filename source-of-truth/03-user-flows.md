@@ -30,7 +30,9 @@ Natural-language study routing is primary; commands are explicit shortcuts.
 
 Students can keep one conversation open and switch the active Study Pack from the ask surface. They can save the current page with the Remember control or type `/screen /remember`, and can save attached images with `/remember`.
 
-Saved pages are OCRed locally, copied into the app data directory when an image path is available, chunked into retrievable context, indexed, and stored in the selected Study Pack. Optional notes in the `/remember` message become the saved page title when present.
+Saved pages are OCRed locally, optionally enriched with MLX Vision structured notes on Apple Silicon, copied into the app data directory when an image path is available, chunked into retrievable context, indexed, and stored in the selected Study Pack. Optional notes in the `/remember` message become the saved page title when present.
+
+When MLX Vision is available but not installed, the Study Pack surface offers an explicit enable action. OCR-only saving remains available if the MLX runtime is absent, installing, or fails.
 
 Existing saved pages with older chunking are automatically re-indexed in the background when their Study Pack becomes active. The ask surface shows indexed-page progress so the student can tell when the pack is ready for grounded checks.
 

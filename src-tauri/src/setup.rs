@@ -12,6 +12,10 @@ pub struct SetupReadiness {
     pub windows_ocr_model: Option<String>,
     pub windows_ocr_model_installed: bool,
     pub python_available: bool,
+    pub mlx_vlm_supported: bool,
+    pub mlx_vlm_ready: bool,
+    pub mlx_vlm_model: Option<String>,
+    pub mlx_vlm_runtime_path: Option<String>,
     pub supertonic_runtime_found: bool,
     pub supertonic_runtime_path: Option<String>,
     pub voice_reachable: bool,
@@ -234,6 +238,7 @@ pub async fn get_setup_readiness(
     .await;
     let docker_available = docker_available();
     let python_available = crate::voice::python_available();
+    let mlx_vlm = crate::mlx_vlm::mlx_vlm_status(app.clone()).ok();
     let runtime = crate::voice::supertonic_runtime_status(&app);
     let search_ready = docker_available && searxng_reachable && reader_reachable;
     let search_runtime_path = search_runtime_dir(&app)
@@ -275,6 +280,11 @@ pub async fn get_setup_readiness(
     if let Some(error) = runtime.error.clone() {
         warnings.push(format!("supertonic_runtime_status:{error}"));
     }
+    if let Some(mlx_vlm) = mlx_vlm.as_ref() {
+        if mlx_vlm.supported && !mlx_vlm.ready {
+            warnings.push("mlx_vlm_optional_not_ready".to_string());
+        }
+    }
 
     Ok(SetupReadiness {
         os: std::env::consts::OS.to_string(),
@@ -283,6 +293,12 @@ pub async fn get_setup_readiness(
         windows_ocr_model,
         windows_ocr_model_installed,
         python_available,
+        mlx_vlm_supported: mlx_vlm.as_ref().is_some_and(|status| status.supported),
+        mlx_vlm_ready: mlx_vlm.as_ref().is_some_and(|status| status.ready),
+        mlx_vlm_model: mlx_vlm.as_ref().map(|status| status.model_id.clone()),
+        mlx_vlm_runtime_path: mlx_vlm
+            .as_ref()
+            .and_then(|status| status.runtime_path.clone()),
         supertonic_runtime_found: runtime.found,
         supertonic_runtime_path: runtime.runtime_path,
         voice_reachable,

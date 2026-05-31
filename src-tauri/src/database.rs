@@ -248,7 +248,7 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
         "  id TEXT PRIMARY KEY, pack_id TEXT NOT NULL REFERENCES study_packs(id) ON DELETE CASCADE,",
         "  conversation_id TEXT, title TEXT NOT NULL, source_kind TEXT NOT NULL,",
         "  source_role TEXT, image_paths TEXT, raw_ocr TEXT NOT NULL, summary TEXT, tags TEXT,",
-        "  index_status TEXT, index_error TEXT, indexed_at INTEGER, created_at INTEGER NOT NULL);",
+        "  structured_notes TEXT, index_status TEXT, index_error TEXT, indexed_at INTEGER, created_at INTEGER NOT NULL);",
         "CREATE TABLE IF NOT EXISTS study_context_chunks (",
         "  id TEXT PRIMARY KEY, item_id TEXT NOT NULL REFERENCES study_context_items(id) ON DELETE CASCADE,",
         "  pack_id TEXT NOT NULL REFERENCES study_packs(id) ON DELETE CASCADE,",
@@ -268,6 +268,7 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
     conn.execute_batch(SCHEMA_DDL)?;
     // Study Pack indexing metadata added after the initial Study Pack schema.
     ensure_column(conn, "study_context_items", "source_role", "TEXT")?;
+    ensure_column(conn, "study_context_items", "structured_notes", "TEXT")?;
     ensure_column(conn, "study_context_items", "index_status", "TEXT")?;
     ensure_column(conn, "study_context_items", "index_error", "TEXT")?;
     ensure_column(conn, "study_context_items", "indexed_at", "INTEGER")?;

@@ -7,6 +7,7 @@ The app is a Tauri v2 desktop app with a React/TypeScript frontend and Rust back
 ## Local Services
 
 - Ollama runs the local LLM.
+- MLX-VLM is the optional Apple Silicon vision-understanding runtime for Study Pack indexing.
 - Supertonic runs as a bundled local HTTP TTS sidecar on loopback. Packaged builds copy the bundled manager to the writable app-local data directory before creating the Python venv/runtime.
 - SearXNG and the reader run through Docker for local web search. Search is optional on Windows beta and must not block core tutor readiness.
 - SQLite stores conversations, learner profile, study sessions, attempts, mastery, and Study Pack context.
@@ -36,8 +37,10 @@ Windows beta defaults:
 
 ## Study Pack Storage And Retrieval
 
-Study Packs use local SQLite tables for packs, saved OCR items, chunks, and an FTS5 search index. Saved screenshot images are copied into the app data directory under `study-context-images/<pack_id>/` so new captures survive normal app reinstalls alongside the SQLite database.
+Study Packs use local SQLite tables for packs, saved OCR items, structured MLX Vision notes, chunks, and an FTS5 search index. Saved screenshot images are copied into the app data directory under `study-context-images/<pack_id>/` so new captures survive normal app reinstalls alongside the SQLite database.
 
-Retrieval uses deterministic lexical scoring plus SQLite FTS ranking over saved chunks, source labels, and tags. Retrieved chunks are injected into normal chat prompts only when relevant, and `/check` uses a dedicated prompt containing saved context, current screenshot OCR, and the student's question.
+On macOS Apple Silicon, `/remember` keeps Apple Vision OCR as the exact-text path and can add MLX-VLM structured page notes when the app-local MLX runtime is installed. The default model target is `mlx-community/Qwen3-VL-8B-Instruct-4bit`; setup must let pip resolve compatible MLX package versions for the current Python environment, then persist/probe runtime status instead of hardcoding a machine-specific MLX version.
+
+Retrieval uses deterministic lexical scoring plus SQLite FTS ranking over saved OCR chunks, structured notes, source labels, and tags. Retrieved chunks are injected into normal chat prompts only when relevant, and `/check` uses a dedicated prompt containing saved context, current screenshot OCR, and the student's question.
 
 Answer checking is evidence-gated: the prompt instructs the model to compare only against saved Study Pack evidence, cite source IDs, and say the saved pack is insufficient when no source directly supports a verdict. Local embedding search is optional future work, not required for the current reliability path.

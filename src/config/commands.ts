@@ -120,7 +120,7 @@ export const COMMANDS: readonly Command[] = [
         '`/remember chapter 4` with an attached image: OCRs the image and saves it as context',
       ],
       behavior:
-        'Runs local OCR, copies available image files into app data, stores the extracted text as structured Study Pack context, and indexes it for later questions and answer checks. It does not call the model.',
+        'Runs local OCR, optionally adds MLX Vision structured page notes on Apple Silicon, copies available image files into app data, stores the extracted text as structured Study Pack context, and indexes it for later questions and answer checks. It does not call the chat model.',
       composability:
         '`/remember` can combine with `/screen` or multiple attached screenshots. The active Study Pack is required.',
       permission:

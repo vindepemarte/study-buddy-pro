@@ -64,7 +64,7 @@ Saves readable text from an attached image or `/screen` capture into the active 
 - `/screen /remember priority signs`: captures the screen and saves it under the active pack
 - `/remember chapter 4` with an attached image: OCRs the image and saves it as context
 
-**Behavior:** Runs local OCR, copies available image files into app data, stores the extracted text as structured Study Pack context, and indexes it for later questions and answer checks. It does not call the model.
+**Behavior:** Runs local OCR, optionally adds MLX Vision structured page notes on Apple Silicon, copies available image files into app data, stores the extracted text as structured Study Pack context, and indexes it for later questions and answer checks. It does not call the chat model.
 
 **Composable:** `/remember` can combine with `/screen` or multiple attached screenshots. The active Study Pack is required.
 

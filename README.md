@@ -14,7 +14,8 @@ The goal is not to complete homework for a student. The app should help the stud
 - Supertonic voice settings and Tauri commands for health, style listing, speech playback, stop, start, and stop.
 - Startup voice launch attempt when voice is enabled. Packaged builds copy the bundled Supertonic manager into the app-local data directory before starting it.
 - Windows beta support for `Ctrl+Space`, screen capture, Supertonic startup, and OCR through local Ollama vision model `gemma4:e2b`.
-- Setup readiness command for Ollama, Windows OCR model, Python, voice, Docker, SearXNG, and reader status. Docker search is optional.
+- Optional Apple Silicon MLX Vision enrichment for Study Packs. `/remember` can combine Apple Vision OCR with local MLX-VLM structured page notes before indexing saved screenshots.
+- Setup readiness command for Ollama, Windows OCR model, Python, optional MLX Vision, voice, Docker, SearXNG, and reader status. Docker search is optional.
 
 ## Local Runtime
 
@@ -46,6 +47,16 @@ bun run search-box:start
 ```
 
 Packaged builds also include the search-box resources. Docker Desktop remains optional; `/search` becomes available after the Docker services are started.
+
+Optional for richer Study Pack screenshot indexing on Apple Silicon:
+
+```bash
+python3.12 --version
+# or
+python3.11 --version
+```
+
+In the app, select a Study Pack and click `Enable MLX`. Study Buddy Pro creates an app-local MLX-VLM venv, installs compatible packages without pinning exact MLX versions, downloads `mlx-community/Qwen3-VL-8B-Instruct-4bit`, and then uses it automatically on future `/remember` saves. OCR-only saving still works if MLX Vision is not installed.
 
 ## Development
 
