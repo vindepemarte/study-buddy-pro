@@ -540,10 +540,12 @@ pub async fn ask_ollama(
     conversation_id: String,
     is_first_turn: bool,
     slash_command: Option<String>,
+    study_pack_id: Option<String>,
     on_event: Channel<StreamChunk>,
     client: State<'_, reqwest::Client>,
     generation: State<'_, GenerationState>,
     history: State<'_, ConversationHistory>,
+    db: State<'_, crate::history::Database>,
     config: State<'_, parking_lot::RwLock<AppConfig>>,
     active_model: State<'_, crate::models::ActiveModelState>,
     capabilities_cache: State<'_, ModelCapabilitiesCache>,
@@ -605,12 +607,25 @@ pub async fn ask_ollama(
     // Build user message content.  When quoted text is present, label it
     // explicitly so the model knows the highlighted text is the primary
     // subject and any attached images provide surrounding context.
-    let content = match quoted_text {
+    let mut content = match quoted_text {
         Some(ref qt) if !qt.trim().is_empty() => {
             format!("[Highlighted Text]\n\"{}\"\n\n[Request]\n{}", qt, message)
         }
         _ => message,
     };
+    if study_pack_id
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|id| !id.is_empty())
+    {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        content = crate::study_context::inject_context_into_prompt(
+            &conn,
+            study_pack_id.as_deref(),
+            &content,
+        )
+        .map_err(|e| e.to_string())?;
+    }
 
     // Emit UserMessage before any image base64 work, so the trace
     // captures the user's intent even if encoding fails. Image paths

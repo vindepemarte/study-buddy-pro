@@ -54,6 +54,40 @@ Extracts all visible text from screenshots or attached images using the platform
 
 ---
 
+## /remember
+
+Saves readable text from an attached image or `/screen` capture into the active Study Pack.
+
+**Usage:** `/remember [optional note]`
+
+**Examples:**
+- `/screen /remember priority signs`: captures the screen and saves it under the active pack
+- `/remember chapter 4` with an attached image: OCRs the image and saves it as context
+
+**Behavior:** Runs local OCR, copies available image files into app data, stores the extracted text as structured Study Pack context, and indexes it for later questions and answer checks. It does not call the model.
+
+**Composable:** `/remember` can combine with `/screen` or multiple attached screenshots. The active Study Pack is required.
+
+**Permission:** Uses the same `/screen` capture requirements when combined with it. macOS requires Screen Recording permission; Windows does not.
+
+---
+
+## /check
+
+Checks a quiz answer or question using retrieved context from the active Study Pack.
+
+**Usage:** `/check <question or answer> or /screen /check <question>`
+
+**Examples:**
+- `/check is B correct here?` asks using the active Study Pack
+- `/screen /check did I choose the right answer?`: OCRs the visible quiz and compares it with saved context
+
+**Behavior:** Retrieves relevant indexed chunks from the active Study Pack, optionally OCRs the current screenshot, and asks the model to correct the student step by step with source IDs. If the saved context is insufficient, it should say what is missing rather than guess.
+
+**Composable:** `/check` can combine with `/screen` and `/think`. The active Study Pack is required.
+
+---
+
 ## /screen
 
 Captures your screen and attaches it as context for the current message.

@@ -1,6 +1,6 @@
 {
   "name": "study-buddy-pro",
-  "version": "0.14.0",
+  "version": "0.14.3",
   "description": "A local-first adaptive study buddy with voice, screenshots, quizzes, and local learner memory",
   "license": "Apache-2.0",
   "repository": {
@@ -14,7 +14,8 @@
     "frontend:dev": "vite",
     "generate:commands": "bun scripts/generate-commands.ts",
     "build:frontend": "tsc && vite build",
-    "build:backend": "tauri build --bundles app",
+    "build:backend": "APPLE_SIGNING_IDENTITY=- tauri build --bundles app",
+    "build:macos": "APPLE_SIGNING_IDENTITY=- tauri build --bundles dmg",
     "build:windows": "tauri build --bundles nsis",
     "build:release": "tauri build --bundles app -c \"{\\\"bundle\\\":{\\\"createUpdaterArtifacts\\\":true}}\"",
     "build:all": "bun run build:frontend && bun run build:backend",

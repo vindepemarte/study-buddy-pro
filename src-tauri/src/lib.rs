@@ -29,6 +29,7 @@ pub mod search;
 pub mod settings_commands;
 pub mod setup;
 pub mod study;
+pub mod study_context;
 pub mod trace;
 pub mod updater;
 pub mod voice;
@@ -1968,6 +1969,16 @@ pub fn run() {
             study::record_vocabulary_attempt,
             study::record_quiz_attempt,
             study::get_learner_summary,
+            study_context::list_study_packs,
+            study_context::create_study_pack,
+            study_context::get_active_study_pack,
+            study_context::set_active_study_pack,
+            study_context::save_context_from_images,
+            study_context::backfill_study_pack_image_paths,
+            study_context::retrieve_study_context,
+            study_context::rebuild_study_pack_index,
+            study_context::check_answer_from_context,
+            study_context::get_study_pack_summary,
             setup::get_setup_readiness,
             setup::start_search_services,
             setup::stop_search_services

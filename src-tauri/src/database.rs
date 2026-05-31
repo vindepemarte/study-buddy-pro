@@ -241,8 +241,37 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
         "  ON vocabulary_terms(term);",
         "CREATE INDEX IF NOT EXISTS idx_mastery_state_item",
         "  ON mastery_state(scope, item_id);",
+        "CREATE TABLE IF NOT EXISTS study_packs (",
+        "  id TEXT PRIMARY KEY, name TEXT NOT NULL, authority_source TEXT, description TEXT,",
+        "  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS study_context_items (",
+        "  id TEXT PRIMARY KEY, pack_id TEXT NOT NULL REFERENCES study_packs(id) ON DELETE CASCADE,",
+        "  conversation_id TEXT, title TEXT NOT NULL, source_kind TEXT NOT NULL,",
+        "  source_role TEXT, image_paths TEXT, raw_ocr TEXT NOT NULL, summary TEXT, tags TEXT,",
+        "  index_status TEXT, index_error TEXT, indexed_at INTEGER, created_at INTEGER NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS study_context_chunks (",
+        "  id TEXT PRIMARY KEY, item_id TEXT NOT NULL REFERENCES study_context_items(id) ON DELETE CASCADE,",
+        "  pack_id TEXT NOT NULL REFERENCES study_packs(id) ON DELETE CASCADE,",
+        "  chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, source_label TEXT NOT NULL,",
+        "  created_at INTEGER NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS study_pack_conversations (",
+        "  pack_id TEXT NOT NULL REFERENCES study_packs(id) ON DELETE CASCADE,",
+        "  conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL,",
+        "  PRIMARY KEY (pack_id, conversation_id));",
+        "CREATE INDEX IF NOT EXISTS idx_study_packs_updated",
+        "  ON study_packs(updated_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_study_context_items_pack",
+        "  ON study_context_items(pack_id, created_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_study_context_chunks_pack",
+        "  ON study_context_chunks(pack_id, created_at DESC);",
     );
     conn.execute_batch(SCHEMA_DDL)?;
+    // Study Pack indexing metadata added after the initial Study Pack schema.
+    ensure_column(conn, "study_context_items", "source_role", "TEXT")?;
+    ensure_column(conn, "study_context_items", "index_status", "TEXT")?;
+    ensure_column(conn, "study_context_items", "index_error", "TEXT")?;
+    ensure_column(conn, "study_context_items", "indexed_at", "INTEGER")?;
+    ensure_study_context_fts(conn)?;
 
     // Incremental column migrations for the messages table. All use
     // ensure_column so repeated startup calls are safe.
@@ -258,6 +287,29 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
     // this migration.
     ensure_column(conn, "messages", "model_name", "TEXT")?;
 
+    Ok(())
+}
+
+fn ensure_study_context_fts(conn: &Connection) -> SqlResult<()> {
+    if let Err(e) = conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS study_context_fts USING fts5(\
+         chunk_id UNINDEXED, item_id UNINDEXED, pack_id UNINDEXED, \
+         source_label, chunk_text, tags, tokenize='unicode61');",
+    ) {
+        eprintln!("study-buddy-pro: Study Pack FTS unavailable: {e}");
+        return Ok(());
+    }
+
+    // Populate FTS for chunks created before the FTS table existed.
+    let _ = conn.execute_batch(
+        "INSERT INTO study_context_fts (chunk_id, item_id, pack_id, source_label, chunk_text, tags)
+         SELECT c.id, c.item_id, c.pack_id, c.source_label, c.chunk_text, COALESCE(i.tags, '')
+         FROM study_context_chunks c
+         JOIN study_context_items i ON i.id = c.item_id
+         WHERE NOT EXISTS (
+           SELECT 1 FROM study_context_fts f WHERE f.chunk_id = c.id
+         );",
+    );
     Ok(())
 }
 

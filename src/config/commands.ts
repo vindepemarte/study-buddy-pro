@@ -108,6 +108,60 @@ export const COMMANDS: readonly Command[] = [
     },
   },
   {
+    trigger: '/remember',
+    label: '/remember',
+    description: 'Save screenshot OCR into the active Study Pack',
+    docs: {
+      summary:
+        'Saves readable text from an attached image or `/screen` capture into the active Study Pack.',
+      usage: '/remember [optional note]',
+      examples: [
+        '`/screen /remember priority signs`: captures the screen and saves it under the active pack',
+        '`/remember chapter 4` with an attached image: OCRs the image and saves it as context',
+      ],
+      behavior:
+        'Runs local OCR, copies available image files into app data, stores the extracted text as structured Study Pack context, and indexes it for later questions and answer checks. It does not call the model.',
+      composability:
+        '`/remember` can combine with `/screen` or multiple attached screenshots. The active Study Pack is required.',
+      permission:
+        'Uses the same `/screen` capture requirements when combined with it. macOS requires Screen Recording permission; Windows does not.',
+    },
+    promptHelp: {
+      summary:
+        'save screenshot or image OCR into the active Study Pack for later indexed, grounded tutoring.',
+      whenToSuggest:
+        'Mention this when the user wants the app to remember a page, quiz module, rule, screenshot, or study source for later checks.',
+      limit:
+        '`/remember` requires an active Study Pack and an attached image or `/screen` capture.',
+    },
+  },
+  {
+    trigger: '/check',
+    label: '/check',
+    description: 'Check an answer against saved Study Pack context',
+    docs: {
+      summary:
+        'Checks a quiz answer or question using retrieved context from the active Study Pack.',
+      usage: '/check <question or answer> or /screen /check <question>',
+      examples: [
+        '`/check is B correct here?` asks using the active Study Pack',
+        '`/screen /check did I choose the right answer?`: OCRs the visible quiz and compares it with saved context',
+      ],
+      behavior:
+        'Retrieves relevant indexed chunks from the active Study Pack, optionally OCRs the current screenshot, and asks the model to correct the student step by step with source IDs. If the saved context is insufficient, it should say what is missing rather than guess.',
+      composability:
+        '`/check` can combine with `/screen` and `/think`. The active Study Pack is required.',
+    },
+    promptHelp: {
+      summary:
+        'check a student answer against indexed Study Pack context, explain mistakes with citations, and admit missing evidence instead of guessing.',
+      whenToSuggest:
+        'Mention this when the user asks whether an answer is correct, wants correction on a quiz, or wants help after choosing a wrong answer.',
+      limit:
+        '`/check` is grounded only in the active Study Pack plus current OCR. If context is missing, say what needs to be saved first.',
+    },
+  },
+  {
     trigger: '/screen',
     label: '/screen',
     description: 'Capture your screen and include it as context',

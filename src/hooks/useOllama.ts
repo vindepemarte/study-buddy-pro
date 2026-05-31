@@ -157,6 +157,7 @@ function finalizeSearchTraceSteps(
 export function useOllama(
   activeModel: string | null,
   onTurnComplete?: (userMsg: Message, assistantMsg: Message) => void,
+  activeStudyPackId?: string | null,
 ) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -406,6 +407,7 @@ export function useOllama(
           conversationId,
           isFirstTurn,
           slashCommand: think ? '/think' : null,
+          studyPackId: activeStudyPackId ?? null,
           onEvent: channel,
         });
       } catch {
@@ -428,7 +430,7 @@ export function useOllama(
         setSearchStage(null);
       }
     },
-    [onTurnComplete, activeModel, ensureTraceConversationId],
+    [onTurnComplete, activeModel, ensureTraceConversationId, activeStudyPackId],
   );
 
   /**

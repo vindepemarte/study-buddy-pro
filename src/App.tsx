@@ -48,6 +48,12 @@ import { useTips } from './hooks/useTips';
 import { useUpdater } from './hooks/useUpdater';
 import type { AttachedImage } from './types/image';
 import { MAX_IMAGE_SIZE_BYTES } from './types/image';
+import type {
+  ContextPromptResponse,
+  SaveContextResponse,
+  StudyPackIndexResponse,
+  StudyPackSummary,
+} from './types/studyPack';
 import { useConfig } from './contexts/ConfigContext';
 import {
   COMMANDS,
@@ -162,6 +168,21 @@ type PendingSubmit =
       query: string;
       context: string | undefined;
       hasScreen: boolean;
+    }
+  | {
+      kind: 'remember';
+      query: string;
+      context: string | undefined;
+      strippedMessage: string;
+      hasScreen: boolean;
+    }
+  | {
+      kind: 'check';
+      query: string;
+      context: string | undefined;
+      strippedMessage: string;
+      hasScreen: boolean;
+      think: boolean;
     }
   | {
       kind: 'screen';
@@ -480,6 +501,43 @@ function App() {
     reset: resetHistory,
   } = useConversationHistory();
 
+  const [studyPacks, setStudyPacks] = useState<StudyPackSummary[]>([]);
+  const [activeStudyPack, setActiveStudyPack] =
+    useState<StudyPackSummary | null>(null);
+  const [studyPackBusy, setStudyPackBusy] = useState(false);
+  const [studyPackStatus, setStudyPackStatus] = useState<string | null>(null);
+  const [isStudyPackFormOpen, setIsStudyPackFormOpen] = useState(false);
+  const [studyPackName, setStudyPackName] = useState('');
+  const [studyPackAuthority, setStudyPackAuthority] = useState('');
+  const [indexingPackId, setIndexingPackId] = useState<string | null>(null);
+  const autoIndexedPacksRef = useRef<Set<string>>(new Set());
+  const studyPackImageBackfillRef = useRef(false);
+
+  const refreshStudyPacks = useCallback(async () => {
+    try {
+      if (!studyPackImageBackfillRef.current) {
+        studyPackImageBackfillRef.current = true;
+        await invoke('backfill_study_pack_image_paths').catch(() => undefined);
+      }
+      const packs = await invoke<StudyPackSummary[]>('list_study_packs');
+      setStudyPacks(packs);
+      setActiveStudyPack(packs.find((pack) => pack.active) ?? null);
+    } catch {
+      setStudyPacks([]);
+      setActiveStudyPack(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshStudyPacks();
+  }, [refreshStudyPacks]);
+
+  useEffect(() => {
+    if (!studyPackStatus) return;
+    const timer = setTimeout(() => setStudyPackStatus(null), 5000);
+    return () => clearTimeout(timer);
+  }, [studyPackStatus]);
+
   /**
    * Persist a completed user/assistant turn to SQLite if the conversation
    * has been saved. Passed as `onTurnComplete` to `useOllama`.
@@ -532,7 +590,7 @@ function App() {
     loadMessages,
     getTraceConversationId,
     addOcrTurn,
-  } = useOllama(activeModel, handleTurnComplete);
+  } = useOllama(activeModel, handleTurnComplete, activeStudyPack?.id ?? null);
 
   /**
    * Mirror of `messages` as a ref so export handlers (and any future
@@ -600,6 +658,50 @@ function App() {
     const timer = setTimeout(() => setCaptureError(null), 5000);
     return () => clearTimeout(timer);
   }, [captureError]);
+
+  useEffect(() => {
+    const pack = activeStudyPack;
+    if (!pack || pack.needs_index_count <= 0) return;
+    if (autoIndexedPacksRef.current.has(pack.id)) return;
+    autoIndexedPacksRef.current.add(pack.id);
+
+    let cancelled = false;
+    const runIndex = async () => {
+      setIndexingPackId(pack.id);
+      setStudyPackStatus(`Indexing ${pack.needs_index_count} saved page(s)...`);
+      try {
+        const result = await invoke<StudyPackIndexResponse>(
+          'rebuild_study_pack_index',
+          {
+            packId: pack.id,
+          },
+        );
+        if (cancelled) return;
+        setStudyPackStatus(
+          `Index ready: ${result.indexed_items}/${result.total_items} page${
+            result.total_items === 1 ? '' : 's'
+          }`,
+        );
+        void refreshStudyPacks();
+      } catch (err) {
+        if (cancelled) return;
+        autoIndexedPacksRef.current.delete(pack.id);
+        setCaptureError(
+          `Could not index Study Pack: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      } finally {
+        if (!cancelled) setIndexingPackId(null);
+      }
+    };
+
+    const timer = window.setTimeout(() => void runIndex(), 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeStudyPack, refreshStudyPacks]);
   /**
    * Set to true when a /screen capture is dispatched, false when it resolves
    * or when the user cancels. Lets the async tail in handleScreenSubmit
@@ -1893,6 +1995,69 @@ function App() {
     setPreviewImageUrl(path.startsWith('blob:') ? path : convertFileSrc(path));
   }, []);
 
+  const handleOpenStudyPackForm = useCallback(() => {
+    setIsStudyPackFormOpen((open) => !open);
+    setStudyPackStatus(null);
+  }, []);
+
+  const handleCreateStudyPack = useCallback(async () => {
+    const name = studyPackName.trim();
+    if (!name) {
+      setCaptureError('Study Pack name is required.');
+      setShakeAskBar(true);
+      return;
+    }
+    try {
+      setStudyPackBusy(true);
+      const result = await invoke<{ pack: StudyPackSummary }>(
+        'create_study_pack',
+        {
+          name,
+          authoritySource: studyPackAuthority.trim() || null,
+          description: null,
+        },
+      );
+      setActiveStudyPack(result.pack);
+      await refreshStudyPacks();
+      setIsStudyPackFormOpen(false);
+      setStudyPackName('');
+      setStudyPackAuthority('');
+      setStudyPackStatus(`Using ${result.pack.name}`);
+    } catch (err) {
+      setCaptureError(
+        `Could not create Study Pack: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    } finally {
+      setStudyPackBusy(false);
+    }
+  }, [refreshStudyPacks, setCaptureError, studyPackAuthority, studyPackName]);
+
+  const handleStudyPackSelect = useCallback(
+    async (packId: string) => {
+      try {
+        setStudyPackBusy(true);
+        const pack = await invoke<StudyPackSummary | null>(
+          'set_active_study_pack',
+          { packId: packId || null },
+        );
+        setActiveStudyPack(pack);
+        await refreshStudyPacks();
+        setStudyPackStatus(pack ? `Using ${pack.name}` : 'Study Pack off');
+      } catch (err) {
+        setCaptureError(
+          `Could not switch Study Pack: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      } finally {
+        setStudyPackBusy(false);
+      }
+    },
+    [refreshStudyPacks, setCaptureError],
+  );
+
   /** Fires the actual ask() call and cleans up attached images + input. */
   const executeSubmit = useCallback(
     (
@@ -2147,6 +2312,337 @@ function App() {
     ],
   );
 
+  const handleRememberSubmit = useCallback(
+    async (fullQuery: string, strippedMessage: string, hasScreen: boolean) => {
+      const pack = activeStudyPack;
+      if (!pack) {
+        setCaptureError('Create or select a Study Pack first.');
+        setShakeAskBar(true);
+        return;
+      }
+
+      const context = sanitizeContext(selectedContext, quote.maxContextLength);
+
+      if (hasScreen) {
+        screenCapturePendingRef.current = true;
+        screenCaptureInputSnapshotRef.current = { query: fullQuery, context };
+      }
+      setStudyPackBusy(true);
+      setIsSubmitPending(true);
+      setPendingUserMessage(
+        buildPendingBubble({
+          query: fullQuery,
+          context,
+          attachedImages,
+          hasScreen,
+        }),
+      );
+      setQuery('');
+      setSelectedContext(null);
+      /* v8 ignore start -- inputRef always set when overlay is visible */
+      if (inputRef.current) inputRef.current.style.height = 'auto';
+      /* v8 ignore stop */
+
+      let screenshotPath: string | undefined;
+      if (hasScreen) {
+        try {
+          screenshotPath = await invoke<string>('capture_full_screen_command', {
+            conversationId: getTraceConversationId(),
+          });
+        } catch (e) {
+          screenCapturePendingRef.current = false;
+          screenCaptureInputSnapshotRef.current = null;
+          setStudyPackBusy(false);
+          setIsSubmitPending(false);
+          setPendingUserMessage(null);
+          setQuery(fullQuery);
+          setSelectedContext(context ?? null);
+          setCaptureError(
+            typeof e === 'string'
+              ? e
+              : e instanceof Error
+                ? e.message
+                : String(e),
+          );
+          return;
+        }
+
+        const wasCancelled = !screenCapturePendingRef.current;
+        screenCapturePendingRef.current = false;
+        screenCaptureInputSnapshotRef.current = null;
+        if (wasCancelled) {
+          setStudyPackBusy(false);
+          return;
+        }
+      }
+
+      const readyPaths = resolveReadyPaths(attachedImages, screenshotPath);
+      if (readyPaths.length === 0) {
+        setStudyPackBusy(false);
+        setIsSubmitPending(false);
+        setPendingUserMessage(null);
+        setQuery(fullQuery);
+        setSelectedContext(context ?? null);
+        setCaptureError('Attach an image or add /screen to save context.');
+        setShakeAskBar(true);
+        return;
+      }
+
+      let ocrText: string;
+      try {
+        ocrText = await invoke<string>('extract_text_command', {
+          imagePaths: readyPaths,
+        });
+      } catch (e) {
+        setStudyPackBusy(false);
+        setIsSubmitPending(false);
+        setPendingUserMessage(null);
+        setQuery(fullQuery);
+        setSelectedContext(context ?? null);
+        setCaptureError(
+          `OCR failed${
+            typeof e === 'string'
+              ? `: ${e}`
+              : e instanceof Error
+                ? `: ${e.message}`
+                : ''
+          }`,
+        );
+        return;
+      }
+
+      if (ocrText === '[No text detected]') {
+        setStudyPackBusy(false);
+        setIsSubmitPending(false);
+        setPendingUserMessage(null);
+        setQuery(fullQuery);
+        setSelectedContext(context ?? null);
+        setCaptureError('No readable text found in the image.');
+        return;
+      }
+
+      let result: SaveContextResponse;
+      try {
+        result = await invoke<SaveContextResponse>('save_context_from_images', {
+          request: {
+            packId: pack.id,
+            imagePaths: readyPaths,
+            ocrText,
+            note: strippedMessage.trim() || null,
+            conversationId: getTraceConversationId(),
+            sourceKind: hasScreen ? 'screen' : 'attached_image',
+          },
+        });
+      } catch (err) {
+        setStudyPackBusy(false);
+        setIsSubmitPending(false);
+        setPendingUserMessage(null);
+        setQuery(fullQuery);
+        setSelectedContext(context ?? null);
+        setCaptureError(
+          `Could not save context: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return;
+      }
+
+      for (const img of attachedImages) URL.revokeObjectURL(img.blobUrl);
+      setAttachedImages([]);
+      setStudyPackBusy(false);
+      setIsSubmitPending(false);
+      setPendingUserMessage(null);
+      setCaptureError(null);
+      await refreshStudyPacks();
+      setStudyPackStatus(
+        `Saved ${result.chunks_saved} context chunk${
+          result.chunks_saved === 1 ? '' : 's'
+        } to ${pack.name}`,
+      );
+      const savedDisplayPaths =
+        result.image_paths.length > 0 ? result.image_paths : readyPaths;
+      addOcrTurn(
+        fullQuery,
+        context,
+        savedDisplayPaths,
+        `Saved to **${pack.name}**: ${result.title}\n\n${result.chunks_saved} context chunk${
+          result.chunks_saved === 1 ? '' : 's'
+        } ready for grounded checks.`,
+      );
+    },
+    [
+      activeStudyPack,
+      selectedContext,
+      attachedImages,
+      addOcrTurn,
+      getTraceConversationId,
+      refreshStudyPacks,
+      setSelectedContext,
+      setCaptureError,
+      quote.maxContextLength,
+    ],
+  );
+
+  const handleCheckSubmit = useCallback(
+    async (
+      fullQuery: string,
+      strippedMessage: string,
+      hasScreen: boolean,
+      hasThink: boolean,
+    ) => {
+      const pack = activeStudyPack;
+      if (!pack) {
+        setCaptureError('Create or select a Study Pack first.');
+        setShakeAskBar(true);
+        return;
+      }
+
+      const context = sanitizeContext(selectedContext, quote.maxContextLength);
+      const needsOcr = hasScreen || attachedImages.length > 0;
+
+      if (needsOcr) {
+        if (hasScreen) {
+          screenCapturePendingRef.current = true;
+          screenCaptureInputSnapshotRef.current = { query: fullQuery, context };
+        }
+        setIsSubmitPending(true);
+        setPendingUserMessage(
+          buildPendingBubble({
+            query: fullQuery,
+            context,
+            attachedImages,
+            hasScreen,
+          }),
+        );
+      }
+      setQuery('');
+      setSelectedContext(null);
+      /* v8 ignore start -- inputRef always set when overlay is visible */
+      if (inputRef.current) inputRef.current.style.height = 'auto';
+      /* v8 ignore stop */
+
+      let screenshotPath: string | undefined;
+      if (hasScreen) {
+        try {
+          screenshotPath = await invoke<string>('capture_full_screen_command', {
+            conversationId: getTraceConversationId(),
+          });
+        } catch (e) {
+          screenCapturePendingRef.current = false;
+          screenCaptureInputSnapshotRef.current = null;
+          setIsSubmitPending(false);
+          setPendingUserMessage(null);
+          setQuery(fullQuery);
+          setSelectedContext(context ?? null);
+          setCaptureError(
+            typeof e === 'string'
+              ? e
+              : e instanceof Error
+                ? e.message
+                : String(e),
+          );
+          return;
+        }
+
+        const wasCancelled = !screenCapturePendingRef.current;
+        screenCapturePendingRef.current = false;
+        screenCaptureInputSnapshotRef.current = null;
+        if (wasCancelled) return;
+      }
+
+      const readyPaths = resolveReadyPaths(attachedImages, screenshotPath);
+      let ocrText = '';
+      if (needsOcr) {
+        try {
+          ocrText = await invoke<string>('extract_text_command', {
+            imagePaths: readyPaths,
+          });
+        } catch (e) {
+          setIsSubmitPending(false);
+          setPendingUserMessage(null);
+          setQuery(fullQuery);
+          setSelectedContext(context ?? null);
+          setCaptureError(
+            `OCR failed${
+              typeof e === 'string'
+                ? `: ${e}`
+                : e instanceof Error
+                  ? `: ${e.message}`
+                  : ''
+            }`,
+          );
+          return;
+        }
+
+        if (ocrText === '[No text detected]') {
+          setIsSubmitPending(false);
+          setPendingUserMessage(null);
+          setQuery(fullQuery);
+          setSelectedContext(context ?? null);
+          setCaptureError('No readable text found in the image.');
+          return;
+        }
+      }
+
+      let prompt: ContextPromptResponse;
+      try {
+        prompt = await invoke<ContextPromptResponse>(
+          'check_answer_from_context',
+          {
+            packId: pack.id,
+            currentOcr: ocrText,
+            question: strippedMessage.trim() || fullQuery,
+            studentAnswer: null,
+          },
+        );
+      } catch (err) {
+        setIsSubmitPending(false);
+        setPendingUserMessage(null);
+        setQuery(fullQuery);
+        setSelectedContext(context ?? null);
+        setCaptureError(
+          `Could not check from context: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return;
+      }
+
+      for (const img of attachedImages) URL.revokeObjectURL(img.blobUrl);
+      setAttachedImages([]);
+      setIsSubmitPending(false);
+      setPendingUserMessage(null);
+      setCaptureError(null);
+      ask(
+        fullQuery,
+        context,
+        undefined,
+        hasThink || undefined,
+        prompt.prompt,
+        readyPaths.length > 0 ? readyPaths : undefined,
+      );
+    },
+    [
+      activeStudyPack,
+      selectedContext,
+      attachedImages,
+      ask,
+      getTraceConversationId,
+      setSelectedContext,
+      setCaptureError,
+      quote.maxContextLength,
+    ],
+  );
+
+  const handleSaveVisibleContext = useCallback(() => {
+    if (!activeStudyPack) {
+      setCaptureError('Create or select a Study Pack first.');
+      setShakeAskBar(true);
+      return;
+    }
+    void handleRememberSubmit('/screen /remember', '', true);
+  }, [activeStudyPack, handleRememberSubmit, setCaptureError]);
+
   /**
    * Async handler for utility commands (`/tldr`, `/translate`, etc.) when the
    * user has attached images or added `/screen`. Runs Vision OCR to extract
@@ -2339,14 +2835,19 @@ function App() {
     const { found } = parseCommands(trimmed);
     const hasExtractCommand = found.has('/extract');
     const hasScreenCommand = found.has('/screen');
+    const hasRememberCommand = found.has('/remember');
+    const hasCheckCommand = found.has('/check');
     const hasUtilityCommand = Array.from(found).some((t) => {
       const cmd = COMMANDS.find((c) => c.trigger === t);
       return !!cmd?.promptTemplate;
     });
-    // /extract and utility+image/screen route through Vision OCR; suppress
-    // image and screen counts so the capability gate does not block the submit.
+    // /extract, /remember, /check, and utility+image/screen route screenshots
+    // through OCR first; suppress image and screen counts so the capability
+    // gate does not require a vision model for text extracted locally.
     const ocrPath =
       hasExtractCommand ||
+      hasRememberCommand ||
+      hasCheckCommand ||
       (hasUtilityCommand && (attachedImages.length > 0 || hasScreenCommand));
     return {
       hasScreenCommand: ocrPath ? false : hasScreenCommand,
@@ -2562,15 +3063,53 @@ function App() {
     const hasThink = found.has('/think');
     const hasSearch = found.has('/search');
     const hasExtract = found.has('/extract');
+    const hasRemember = found.has('/remember');
+    const hasCheck = found.has('/check');
     const utilityTrigger = Array.from(found).find((t) => {
       const cmd = COMMANDS.find((c) => c.trigger === t);
       return !!cmd?.promptTemplate;
     });
 
+    if (hasRemember && hasCheck) {
+      setCaptureError('Use /remember and /check in separate messages.');
+      setShakeAskBar(true);
+      return;
+    }
+
     // /extract requires content to extract from. Shake before any other gate
     // so the error message is the specific one.
     if (hasExtract && attachedImages.length === 0 && !hasScreen) {
       setCaptureError('Attach an image or add /screen to extract text from.');
+      setShakeAskBar(true);
+      return;
+    }
+
+    if (hasRemember && !activeStudyPack) {
+      setCaptureError('Create or select a Study Pack first.');
+      setShakeAskBar(true);
+      return;
+    }
+
+    if (hasRemember && attachedImages.length === 0 && !hasScreen) {
+      setCaptureError('Attach an image or add /screen to save context.');
+      setShakeAskBar(true);
+      return;
+    }
+
+    if (hasCheck && !activeStudyPack) {
+      setCaptureError('Create or select a Study Pack first.');
+      setShakeAskBar(true);
+      return;
+    }
+
+    if (
+      hasCheck &&
+      !strippedMessage.trim() &&
+      !selectedContext?.trim() &&
+      attachedImages.length === 0 &&
+      !hasScreen
+    ) {
+      setCaptureError('Ask what to check, attach an image, or add /screen.');
       setShakeAskBar(true);
       return;
     }
@@ -2582,6 +3121,7 @@ function App() {
     // for these paths, but we short-circuit here to make the intent explicit
     // and to skip the env gate for /extract specifically.
     const isOcrPath =
+      hasRemember ||
       hasExtract ||
       (utilityTrigger !== undefined &&
         (hasScreen || attachedImages.length > 0));
@@ -2670,7 +3210,24 @@ function App() {
       if (inputRef.current) inputRef.current.style.height = 'auto';
       /* v8 ignore stop */
 
-      if (hasExtract) {
+      if (hasRemember) {
+        pendingSubmitRef.current = {
+          kind: 'remember',
+          query: trimmedQuery,
+          context,
+          strippedMessage,
+          hasScreen,
+        };
+      } else if (hasCheck) {
+        pendingSubmitRef.current = {
+          kind: 'check',
+          query: trimmedQuery,
+          context,
+          strippedMessage,
+          hasScreen,
+          think: hasThink,
+        };
+      } else if (hasExtract) {
         pendingSubmitRef.current = {
           kind: 'extract',
           query: trimmedQuery,
@@ -2708,6 +3265,21 @@ function App() {
     }
 
     // Direct dispatch: all attached images (if any) are already resolved.
+
+    if (hasRemember) {
+      void handleRememberSubmit(trimmedQuery, strippedMessage, hasScreen);
+      return;
+    }
+
+    if (hasCheck) {
+      void handleCheckSubmit(
+        trimmedQuery,
+        strippedMessage,
+        hasScreen,
+        hasThink,
+      );
+      return;
+    }
 
     if (hasExtract) {
       void handleExtractSubmit(trimmedQuery, hasScreen);
@@ -2772,6 +3344,8 @@ function App() {
     handleScreenSubmit,
     handleExtractSubmit,
     handleUtilityOcrSubmit,
+    handleRememberSubmit,
+    handleCheckSubmit,
     selectedContext,
     setSelectedContext,
     attachedImages,
@@ -2781,6 +3355,7 @@ function App() {
     searchActive,
     quote.maxContextLength,
     hasBlockingConflict,
+    activeStudyPack,
   ]);
 
   // When a pending submit exists and all images finish processing, dispatch
@@ -2811,6 +3386,23 @@ function App() {
     pendingSubmitRef.current = null;
 
     switch (ref.kind) {
+      case 'remember':
+        setPendingUserMessage(null);
+        void handleRememberSubmit(
+          ref.query,
+          ref.strippedMessage,
+          ref.hasScreen,
+        );
+        return;
+      case 'check':
+        setPendingUserMessage(null);
+        void handleCheckSubmit(
+          ref.query,
+          ref.strippedMessage,
+          ref.hasScreen,
+          ref.think,
+        );
+        return;
       case 'extract':
         // Clear the loading-spinner bubble; handleExtractSubmit re-sets a
         // fresh pending bubble synchronously before its first await so
@@ -2858,6 +3450,8 @@ function App() {
     handleExtractSubmit,
     handleUtilityOcrSubmit,
     handleScreenSubmit,
+    handleRememberSubmit,
+    handleCheckSubmit,
     setSelectedContext,
   ]);
   /* eslint-enable @eslint-react/set-state-in-effect */
@@ -3413,6 +4007,124 @@ function App() {
                               ) : null}
                             </AnimatePresence>
                           )}
+
+                          <div className="border-t border-surface-border px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <select
+                                aria-label="Study Pack"
+                                value={activeStudyPack?.id ?? ''}
+                                onChange={(event) =>
+                                  void handleStudyPackSelect(
+                                    event.currentTarget.value,
+                                  )
+                                }
+                                disabled={studyPackBusy}
+                                className="min-w-0 flex-1 rounded-md border border-surface-border bg-surface-elevated px-2 py-1 text-xs text-text-primary outline-none focus:border-primary"
+                              >
+                                <option value="">No Study Pack</option>
+                                {studyPacks.map((pack) => (
+                                  <option key={pack.id} value={pack.id}>
+                                    {pack.name} ({pack.item_count})
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={handleOpenStudyPackForm}
+                                disabled={studyPackBusy}
+                                className="shrink-0 rounded-md border border-surface-border px-2 py-1 text-xs font-medium text-text-primary hover:bg-surface-elevated disabled:opacity-50"
+                              >
+                                + Pack
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleSaveVisibleContext}
+                                disabled={!activeStudyPack || studyPackBusy}
+                                className="shrink-0 rounded-md border border-surface-border px-2 py-1 text-xs font-medium text-text-primary hover:bg-surface-elevated disabled:opacity-50"
+                              >
+                                Remember
+                              </button>
+                            </div>
+                            {(studyPackStatus || activeStudyPack) && (
+                              <p className="mt-1 truncate text-[11px] leading-4 text-text-secondary/70">
+                                {studyPackStatus ??
+                                  `${activeStudyPack?.indexed_count ?? 0}/${activeStudyPack?.item_count ?? 0} indexed`}
+                              </p>
+                            )}
+                            {activeStudyPack &&
+                              activeStudyPack.item_count > 0 && (
+                                <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-elevated">
+                                  <div
+                                    className="h-full rounded-full bg-primary transition-all duration-300"
+                                    style={{
+                                      width: `${Math.round(
+                                        ((activeStudyPack.item_count -
+                                          activeStudyPack.needs_index_count) /
+                                          activeStudyPack.item_count) *
+                                          100,
+                                      )}%`,
+                                      opacity:
+                                        indexingPackId === activeStudyPack.id
+                                          ? 0.65
+                                          : 1,
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            {isStudyPackFormOpen && (
+                              <form
+                                className="mt-2 grid gap-2"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  void handleCreateStudyPack();
+                                }}
+                              >
+                                <input
+                                  aria-label="Study Pack name"
+                                  value={studyPackName}
+                                  onChange={(event) =>
+                                    setStudyPackName(event.currentTarget.value)
+                                  }
+                                  placeholder="Driver License Test"
+                                  disabled={studyPackBusy}
+                                  className="min-w-0 rounded-md border border-surface-border bg-surface-elevated px-2 py-1 text-xs text-text-primary outline-none placeholder:text-text-secondary/55 focus:border-primary disabled:opacity-50"
+                                />
+                                <input
+                                  aria-label="Authority source"
+                                  value={studyPackAuthority}
+                                  onChange={(event) =>
+                                    setStudyPackAuthority(
+                                      event.currentTarget.value,
+                                    )
+                                  }
+                                  placeholder="Official manual or source"
+                                  disabled={studyPackBusy}
+                                  className="min-w-0 rounded-md border border-surface-border bg-surface-elevated px-2 py-1 text-xs text-text-primary outline-none placeholder:text-text-secondary/55 focus:border-primary disabled:opacity-50"
+                                />
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setIsStudyPackFormOpen(false)
+                                    }
+                                    disabled={studyPackBusy}
+                                    className="rounded-md px-2 py-1 text-xs text-text-secondary hover:bg-surface-elevated hover:text-text-primary disabled:opacity-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    disabled={
+                                      studyPackBusy || !studyPackName.trim()
+                                    }
+                                    className="rounded-md bg-primary/15 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
+                                  >
+                                    Create
+                                  </button>
+                                </div>
+                              </form>
+                            )}
+                          </div>
 
                           {/* Capture error banner: shown when /screen capture fails so
                     the user knows why the message was not sent. */}

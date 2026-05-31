@@ -4,6 +4,7 @@ Status: active
 
 - Python embedding is deferred. Windows beta guides users to install Python 3.11/3.12, then the app-managed Supertonic runtime creates its own venv.
 - Code signing is deferred. Windows beta uses unsigned NSIS; public release needs a signing certificate.
+- Bulk PDF/manual import is deferred; current Study Pack ingestion supports `/screen /remember` and multiple attached screenshots.
 
 - Which exact default Ollama vision model should ship as the first guided recommendation after benchmarking on target hardware?
 - Which Windows OCR implementation will be used for production parity?
