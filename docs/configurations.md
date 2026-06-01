@@ -57,6 +57,18 @@ tts_model = "openai/gpt-4o-mini-tts-2025-12-15"
 app_title = "Study Buddy Pro"
 site_url = "https://github.com/vindepemarte/study-buddy-pro"
 
+[voice]
+enabled = true
+auto_speak_study = true
+provider = "supertonic"
+base_url = "http://127.0.0.1:7788"
+voice = "M1"
+openrouter_voice = "nova"
+lang = "auto"
+steps = 8
+speed = 1.05
+max_chunk_length = 300
+
 [prompt]
 # The full secretary persona prompt. Seeded on first run so this file is the
 # single source of truth: edit it to tune behavior. Clearing it sends only
@@ -163,10 +175,27 @@ OpenRouter settings are used when `[inference].provider = "openrouter"`. The Set
 | `vision_model` | `"qwen/qwen3.5-flash-02-23"` | Yes | — | model id with image input | Model used for normal chat turns that include screenshots or image attachments when separate routing is enabled. |
 | `reasoning_model` | `"qwen/qwen3.5-flash-02-23"` | Yes | — | model id | Reserved reasoning/verifier model for deeper checks and future planner passes. |
 | `embedding_model` | `"qwen/qwen3-embedding-8b"` | Yes | — | model id with embeddings output | Model used to embed Study Pack chunks and queries. Vectors are stored in local SQLite. |
-| `stt_model` | `"openai/whisper-large-v3"` | Yes | — | model id with audio input and text output | Speech-to-text model selection for future API audio input. |
-| `tts_model` | `"openai/gpt-4o-mini-tts-2025-12-15"` | Yes | — | model id with audio output | Text-to-speech model selection for future API voice output. Local Supertonic remains available. |
+| `stt_model` | `"openai/whisper-large-v3"` | Yes | — | model id with transcription output, or audio input + text output | Speech-to-text model selection for OpenRouter audio transcription. |
+| `tts_model` | `"openai/gpt-4o-mini-tts-2025-12-15"` | Yes | — | model id with speech/audio output | Text-to-speech model selection for OpenRouter API voice output. Local Supertonic remains available. |
 | `app_title` | `"Study Buddy Pro"` | Yes | — | any string | Optional title sent to OpenRouter for request attribution. |
 | `site_url` | GitHub repo URL | Yes | — | URL or empty | Optional referer URL sent to OpenRouter for request attribution. |
+
+### `[voice]`
+
+Controls spoken tutor responses. `provider = "supertonic"` uses the bundled local sidecar. `provider = "openrouter"` sends the speak text to OpenRouter's `/audio/speech` endpoint with `[openrouter].tts_model`, writes the returned MP3 into the local speech cache, and plays it with the native OS audio helper.
+
+| Constant | Default | Tunable? | Why not tunable | Bounds | Description |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| `enabled` | `true` | Yes | — | boolean | Enables speech commands. When false, speak requests become no-ops. |
+| `auto_speak_study` | `true` | Yes | — | boolean | Automatically speaks guided Study Mode replies. Normal chat still stays manual. |
+| `provider` | `"supertonic"` | Yes | — | `"supertonic"` or `"openrouter"` | Chooses local/free Supertonic or API speech through OpenRouter. |
+| `base_url` | `"http://127.0.0.1:7788"` | Yes | — | URL | Loopback URL for the local Supertonic server. Ignored when `provider = "openrouter"`. |
+| `voice` | `"M1"` | Yes | — | non-empty string | Supertonic voice/style name. |
+| `openrouter_voice` | `"nova"` | Yes | — | non-empty string | Voice identifier sent to the selected OpenRouter TTS model. Supported voices vary by model. |
+| `lang` | `"auto"` | Yes | — | language code or `"auto"` | Supertonic language hint. OpenRouter TTS currently ignores this field. |
+| `steps` | `8` | Yes | — | `4..12` | Supertonic quality steps. Ignored when `provider = "openrouter"`. |
+| `speed` | `1.05` | Yes | — | `0.7..2.0` | Spoken speed multiplier. Sent to Supertonic and OpenRouter TTS models that support speed. |
+| `max_chunk_length` | `300` | Yes | — | `80..1000` | Maximum Supertonic chunk length for long replies. OpenRouter TTS receives the cleaned text directly. |
 
 ### `[prompt]`
 

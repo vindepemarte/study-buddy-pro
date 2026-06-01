@@ -40,9 +40,9 @@ const HELPERS = {
     embedding_model:
       'Embedding model used for local semantic memory. The vectors are stored locally; only the text being embedded is sent to OpenRouter.',
     stt_model:
-      'Speech-to-text model used for future microphone/audio transcription through OpenRouter.',
+      'Speech-to-text model used for microphone/audio transcription through OpenRouter.',
     tts_model:
-      'Text-to-speech model used for future API voice output when you choose API speech instead of local Supertonic.',
+      'Text-to-speech model used for API voice output when you choose API speech instead of local Supertonic.',
     app_title: 'Optional app title sent to OpenRouter for request attribution.',
     site_url: 'Optional site URL sent to OpenRouter for request attribution.',
   },
@@ -95,6 +95,12 @@ const HELPERS = {
       'How long (in seconds) Study Buddy Pro waits for the AI to decide whether the search results are good enough to answer your question. Raise this if your local AI model is slow on your hardware. Lowering it only causes the judging step to give up early.',
     router_timeout_s:
       'How long (in seconds) Study Buddy Pro waits for the AI to decide whether your question even needs a web search and to plan the first queries. Raise this if your local AI model is slow on your hardware. Lowering it only causes the planning step to give up early.',
+  },
+  voice: {
+    provider:
+      'Choose local Supertonic for offline/free speech, or OpenRouter to synthesize speech through the selected OpenRouter TTS model.',
+    openrouter_voice:
+      'Voice identifier sent to the selected OpenRouter TTS model. Check the model page for supported voices.',
   },
   debug: {
     trace_enabled:

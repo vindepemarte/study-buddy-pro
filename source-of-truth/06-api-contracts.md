@@ -13,7 +13,7 @@ Backend commands:
 - `speak_text`
 - `stop_speech`
 
-Voice responses must report whether Supertonic is reachable, which URL is used, available voices when known, and a clear failure message when offline.
+Voice responses must report whether Supertonic is reachable, which URL is used, available voices when known, and a clear failure message when offline. `speak_text` routes through local Supertonic when `[voice].provider = "supertonic"` and through OpenRouter `/audio/speech` when `[voice].provider = "openrouter"`, using the selected OpenRouter TTS model and local OS playback.
 
 ## MLX Vision
 
@@ -52,8 +52,9 @@ Study commands should remain local and additive to existing conversation history
 Backend commands:
 
 - `openrouter_list_models`
+- `openrouter_transcribe_audio`
 
-OpenRouter chat must use the same stream event shape as the Ollama route so the frontend renderer stays provider-neutral. Settings must store the API key, base URL, model ids, and attribution headers locally, then fetch the model catalog so users can choose models by input/output modality and see pricing. When OpenRouter is selected, direct image/screenshot chat routes to the configured general model or vision model; Ollama capability gates must not block that path.
+OpenRouter chat must use the same stream event shape as the Ollama route so the frontend renderer stays provider-neutral. Settings must store the API key, base URL, model ids, and attribution headers locally, then fetch the model catalog so users can choose models by input/output modality and see pricing. When OpenRouter is selected, direct image/screenshot chat routes to the configured general model or vision model; Ollama capability gates must not block that path. OpenRouter speech uses `/audio/speech`; transcription uses `/audio/transcriptions` with base64 audio and the selected STT model.
 
 ## Setup
 

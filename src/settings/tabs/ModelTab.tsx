@@ -36,8 +36,13 @@ interface ModelTabProps {
 }
 
 type Provider = 'ollama' | 'openrouter';
+type VoiceProvider = 'supertonic' | 'openrouter';
 
 const PROVIDER_OPTIONS: readonly Provider[] = ['ollama', 'openrouter'];
+const VOICE_PROVIDER_OPTIONS: readonly VoiceProvider[] = [
+  'supertonic',
+  'openrouter',
+];
 
 const DEFAULT_OPENROUTER = {
   api_key: '',
@@ -193,6 +198,8 @@ function modelPriceLine(model: OpenRouterModel | undefined): string {
 export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
   const openrouter = config.openrouter ?? DEFAULT_OPENROUTER;
   const provider = (config.inference.provider ?? 'ollama') as Provider;
+  const voiceProvider = (config.voice.provider ??
+    'supertonic') as VoiceProvider;
   const [inactivityMin, setInactivityMin] = useState(
     config.inference.keep_warm_inactivity_minutes,
   );
@@ -299,15 +306,20 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
         catalogModels,
         openrouter.stt_model,
         (model) =>
-          hasModality(model, 'input', 'audio') &&
-          hasModality(model, 'output', 'text'),
+          hasModality(model, 'output', 'transcription') ||
+          (hasModality(model, 'input', 'audio') &&
+            hasModality(model, 'output', 'text')),
       ),
     [catalogModels, openrouter.stt_model],
   );
   const ttsModelOptions = useMemo(
     () =>
-      modelOptions(catalogModels, openrouter.tts_model, (model) =>
-        hasModality(model, 'output', 'audio'),
+      modelOptions(
+        catalogModels,
+        openrouter.tts_model,
+        (model) =>
+          hasModality(model, 'output', 'speech') ||
+          hasModality(model, 'output', 'audio'),
       ),
     [catalogModels, openrouter.tts_model],
   );
@@ -966,7 +978,7 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
           section="voice"
           fieldKey="enabled"
           label="Enable voice"
-          helper="Use the local Supertonic sidecar for spoken tutor responses."
+          helper="Let Study Buddy Pro speak tutor responses through the selected voice provider."
           initialValue={config.voice.enabled}
           resyncToken={resyncToken}
           onSaved={onSaved}
@@ -976,6 +988,23 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
               checked={value}
               onChange={setValue}
               ariaLabel="Enable voice"
+            />
+          )}
+        />
+        <SaveField
+          section="voice"
+          fieldKey="provider"
+          label="Voice provider"
+          helper={configHelp('voice', 'provider')}
+          initialValue={voiceProvider}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          render={(value, setValue) => (
+            <Dropdown
+              value={value}
+              options={VOICE_PROVIDER_OPTIONS}
+              onChange={(next) => setValue(next as VoiceProvider)}
+              ariaLabel="Voice provider"
             />
           )}
         />
@@ -996,6 +1025,26 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
             />
           )}
         />
+        {voiceProvider === 'openrouter' && (
+          <SaveField
+            section="voice"
+            fieldKey="openrouter_voice"
+            label="OpenRouter voice"
+            helper={configHelp('voice', 'openrouter_voice')}
+            initialValue={config.voice.openrouter_voice ?? 'nova'}
+            resyncToken={resyncToken}
+            onSaved={onSaved}
+            render={(value, setValue, errored) => (
+              <TextField
+                value={value}
+                onChange={setValue}
+                placeholder="nova"
+                errored={errored}
+                ariaLabel="OpenRouter voice"
+              />
+            )}
+          />
+        )}
         <SaveField
           section="voice"
           fieldKey="base_url"

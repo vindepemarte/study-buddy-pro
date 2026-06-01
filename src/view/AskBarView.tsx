@@ -143,6 +143,33 @@ const CAMERA_ICON = (
   </svg>
 );
 
+/** Hoisted static microphone icon - records voice input for transcription. */
+const MICROPHONE_ICON = (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 16 16"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <path
+      d="M8 2.2C6.8 2.2 5.9 3.1 5.9 4.3V7.1C5.9 8.3 6.8 9.2 8 9.2C9.2 9.2 10.1 8.3 10.1 7.1V4.3C10.1 3.1 9.2 2.2 8 2.2Z"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M3.8 7.1C3.8 9.4 5.6 11.2 8 11.2C10.4 11.2 12.2 9.4 12.2 7.1M8 11.2V13.8M6.1 13.8H9.9"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 /** Props for the AskBarView component. */
 interface AskBarViewProps {
   /** The current user input text. */
@@ -178,6 +205,12 @@ interface AskBarViewProps {
   onImagePreview: (id: string) => void;
   /** Called when the user clicks the screenshot capture button. */
   onScreenshot: () => void;
+  /** Called when the user starts/stops OpenRouter speech-to-text input. */
+  onVoiceInput?: () => void;
+  /** True while the microphone is actively recording. */
+  isVoiceInputActive?: boolean;
+  /** True while recorded audio is being transcribed. */
+  isVoiceTranscribing?: boolean;
   /**
    * Drag state passed down from the root window handler.
    * "normal" = violet ring; "max" = red ring + label; undefined = no ring.
@@ -291,6 +324,9 @@ export function AskBarView({
   onImageRemove,
   onImagePreview,
   onScreenshot,
+  onVoiceInput,
+  isVoiceInputActive = false,
+  isVoiceTranscribing = false,
   isDragOver,
   onModelPickerToggle,
   isModelPickerOpen,
@@ -316,9 +352,11 @@ export function AskBarView({
   }, [inputRef]);
 
   /** True when the UI should be locked - either generating or waiting for images. */
-  const isBusy = isGenerating || isSubmitPending;
+  const isBusy = isGenerating || isSubmitPending || isVoiceTranscribing;
   const canSubmit =
-    (query.trim().length > 0 || attachedImages.length > 0) && !isBusy;
+    (query.trim().length > 0 || attachedImages.length > 0) &&
+    !isBusy &&
+    !isVoiceInputActive;
   const isAtMaxImages = attachedImages.length >= maxImages;
 
   /** True briefly after a paste attempt is rejected because max images reached. */
@@ -727,6 +765,36 @@ export function AskBarView({
                 className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-primary hover:bg-primary/10 transition-colors duration-150 disabled:opacity-40 disabled:cursor-default cursor-pointer"
               >
                 {CAMERA_ICON}
+              </button>
+            </Tooltip>
+          )}
+
+          {onVoiceInput && (
+            <Tooltip
+              label={
+                isVoiceInputActive
+                  ? 'Stop voice input'
+                  : isVoiceTranscribing
+                    ? 'Transcribing...'
+                    : 'Record voice input'
+              }
+            >
+              <button
+                type="button"
+                onClick={onVoiceInput}
+                disabled={
+                  isGenerating || isSubmitPending || isVoiceTranscribing
+                }
+                aria-label={
+                  isVoiceInputActive ? 'Stop voice input' : 'Record voice input'
+                }
+                className={`shrink-0 w-7 h-7 flex items-center justify-center rounded-lg transition-colors duration-150 disabled:opacity-40 disabled:cursor-default cursor-pointer ${
+                  isVoiceInputActive
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-text-secondary hover:text-primary hover:bg-primary/10'
+                }`}
+              >
+                {MICROPHONE_ICON}
               </button>
             </Tooltip>
           )}

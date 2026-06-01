@@ -30,7 +30,8 @@ use super::defaults::{
     DEFAULT_TEXT_LINE_HEIGHT, DEFAULT_TOP_K_URLS, DEFAULT_UPDATER_AUTO_CHECK,
     DEFAULT_UPDATER_CHECK_INTERVAL_HOURS, DEFAULT_UPDATER_MANIFEST_URL,
     DEFAULT_VOICE_AUTO_SPEAK_STUDY, DEFAULT_VOICE_BASE_URL, DEFAULT_VOICE_ENABLED,
-    DEFAULT_VOICE_LANG, DEFAULT_VOICE_MAX_CHUNK_LENGTH, DEFAULT_VOICE_NAME, DEFAULT_VOICE_SPEED,
+    DEFAULT_VOICE_LANG, DEFAULT_VOICE_MAX_CHUNK_LENGTH, DEFAULT_VOICE_NAME,
+    DEFAULT_VOICE_OPENROUTER_VOICE, DEFAULT_VOICE_PROVIDER, DEFAULT_VOICE_SPEED,
     DEFAULT_VOICE_STEPS,
 };
 
@@ -287,9 +288,8 @@ impl Default for SearchSection {
     }
 }
 
-/// Local text-to-speech configuration. Study Buddy Pro speaks through a
-/// loopback Supertonic sidecar; the user can tune the voice without changing
-/// the app binary.
+/// Text-to-speech configuration. Study Buddy Pro can speak through the local
+/// Supertonic sidecar or OpenRouter's `/audio/speech` endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct VoiceSection {
@@ -297,10 +297,14 @@ pub struct VoiceSection {
     pub enabled: bool,
     /// Automatically speak guided Study Mode turns. Normal chat stays manual.
     pub auto_speak_study: bool,
+    /// Active voice provider: "supertonic" or "openrouter".
+    pub provider: String,
     /// Base URL of the local Supertonic server.
     pub base_url: String,
     /// Built-in or imported Supertonic voice/style name.
     pub voice: String,
+    /// Voice identifier sent to OpenRouter TTS models.
+    pub openrouter_voice: String,
     /// ISO language code, or "auto" to let Study Buddy Pro infer per turn.
     pub lang: String,
     /// Supertonic quality/speed steps.
@@ -316,8 +320,10 @@ impl Default for VoiceSection {
         Self {
             enabled: DEFAULT_VOICE_ENABLED,
             auto_speak_study: DEFAULT_VOICE_AUTO_SPEAK_STUDY,
+            provider: DEFAULT_VOICE_PROVIDER.to_string(),
             base_url: DEFAULT_VOICE_BASE_URL.to_string(),
             voice: DEFAULT_VOICE_NAME.to_string(),
+            openrouter_voice: DEFAULT_VOICE_OPENROUTER_VOICE.to_string(),
             lang: DEFAULT_VOICE_LANG.to_string(),
             steps: DEFAULT_VOICE_STEPS,
             speed: DEFAULT_VOICE_SPEED,

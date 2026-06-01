@@ -42,7 +42,8 @@ use super::defaults::{
     DEFAULT_SYSTEM_PROMPT_BASE, DEFAULT_TEXT_BASE_PX, DEFAULT_TEXT_FONT_WEIGHT,
     DEFAULT_TEXT_LETTER_SPACING_PX, DEFAULT_TEXT_LINE_HEIGHT, DEFAULT_TOP_K_URLS,
     DEFAULT_UPDATER_CHECK_INTERVAL_HOURS, DEFAULT_UPDATER_MANIFEST_URL, DEFAULT_VOICE_BASE_URL,
-    DEFAULT_VOICE_LANG, DEFAULT_VOICE_MAX_CHUNK_LENGTH, DEFAULT_VOICE_NAME, DEFAULT_VOICE_SPEED,
+    DEFAULT_VOICE_LANG, DEFAULT_VOICE_MAX_CHUNK_LENGTH, DEFAULT_VOICE_NAME,
+    DEFAULT_VOICE_OPENROUTER_VOICE, DEFAULT_VOICE_PROVIDER, DEFAULT_VOICE_SPEED,
     DEFAULT_VOICE_STEPS, SLASH_COMMAND_PROMPT_APPENDIX,
 };
 use super::error::ConfigError;
@@ -350,11 +351,18 @@ pub(crate) fn resolve(config: &mut AppConfig) {
     }
 
     // Voice section.
+    config.voice.provider = match config.voice.provider.trim() {
+        "openrouter" => "openrouter".to_string(),
+        _ => DEFAULT_VOICE_PROVIDER.to_string(),
+    };
     if config.voice.base_url.trim().is_empty() {
         config.voice.base_url = DEFAULT_VOICE_BASE_URL.to_string();
     }
     if config.voice.voice.trim().is_empty() {
         config.voice.voice = DEFAULT_VOICE_NAME.to_string();
+    }
+    if config.voice.openrouter_voice.trim().is_empty() {
+        config.voice.openrouter_voice = DEFAULT_VOICE_OPENROUTER_VOICE.to_string();
     }
     if config.voice.lang.trim().is_empty() {
         config.voice.lang = DEFAULT_VOICE_LANG.to_string();

@@ -66,8 +66,10 @@ export interface RawAppConfig {
   voice: {
     enabled: boolean;
     auto_speak_study: boolean;
+    provider?: string;
     base_url: string;
     voice: string;
+    openrouter_voice?: string;
     lang: string;
     steps: number;
     speed: number;

@@ -1986,6 +1986,7 @@ pub fn run() {
             mlx_vlm::mlx_vlm_install,
             mlx_vlm::mlx_vlm_describe_images,
             openrouter::openrouter_list_models,
+            openrouter::openrouter_transcribe_audio,
             setup::get_setup_readiness,
             setup::start_search_services,
             setup::stop_search_services

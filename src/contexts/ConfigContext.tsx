@@ -67,8 +67,10 @@ interface RawAppConfig {
   voice?: {
     enabled: boolean;
     auto_speak_study: boolean;
+    provider?: string;
     base_url: string;
     voice: string;
+    openrouter_voice?: string;
     lang: string;
     steps: number;
     speed: number;
@@ -115,8 +117,10 @@ export interface AppConfig {
   voice: {
     enabled: boolean;
     autoSpeakStudy: boolean;
+    provider: string;
     baseUrl: string;
     voice: string;
+    openrouterVoice: string;
     lang: string;
     steps: number;
     speed: number;
@@ -165,8 +169,10 @@ function transform(raw: RawAppConfig): AppConfig {
     voice: {
       enabled: raw.voice?.enabled ?? false,
       autoSpeakStudy: raw.voice?.auto_speak_study ?? false,
+      provider: raw.voice?.provider ?? 'supertonic',
       baseUrl: raw.voice?.base_url ?? 'http://127.0.0.1:7788',
       voice: raw.voice?.voice ?? 'M1',
+      openrouterVoice: raw.voice?.openrouter_voice ?? 'nova',
       lang: raw.voice?.lang ?? 'auto',
       steps: raw.voice?.steps ?? 8,
       speed: raw.voice?.speed ?? 1.05,
@@ -316,8 +322,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   voice: {
     enabled: true,
     autoSpeakStudy: true,
+    provider: 'supertonic',
     baseUrl: 'http://127.0.0.1:7788',
     voice: 'M1',
+    openrouterVoice: 'nova',
     lang: 'auto',
     steps: 8,
     speed: 1.05,

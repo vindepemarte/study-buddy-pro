@@ -89,14 +89,14 @@ fn stop_child(state: &VoicePlaybackState) {
     }
 }
 
-fn speech_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn speech_path(app: &AppHandle, extension: &str) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_cache_dir()
         .map_err(|e| format!("failed to resolve app cache dir: {e}"))?
         .join("speech");
     fs::create_dir_all(&dir).map_err(|e| format!("failed to create speech cache: {e}"))?;
-    Ok(dir.join("assistant.wav"))
+    Ok(dir.join(format!("assistant.{}", extension.trim_start_matches('.'))))
 }
 
 fn spawn_player(path: &PathBuf) -> Result<Child, String> {
@@ -110,10 +110,29 @@ fn spawn_player(path: &PathBuf) -> Result<Child, String> {
 
     #[cfg(target_os = "windows")]
     {
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
         let escaped = path.to_string_lossy().replace('\'', "''");
-        let script = format!(
-            "$player = New-Object System.Media.SoundPlayer -ArgumentList '{escaped}'; $player.Load(); $player.PlaySync()"
-        );
+        let script = if extension == "mp3" {
+            format!(
+                "Add-Type -AssemblyName presentationCore; \
+                 $player = New-Object System.Windows.Media.MediaPlayer; \
+                 $player.Open([uri](Resolve-Path '{escaped}')); \
+                 $player.Play(); \
+                 for ($i = 0; $i -lt 6000; $i++) {{ \
+                   Start-Sleep -Milliseconds 100; \
+                   if ($player.NaturalDuration.HasTimeSpan -and $player.Position -ge $player.NaturalDuration.TimeSpan) {{ break }} \
+                 }}; \
+                 $player.Close()"
+            )
+        } else {
+            format!(
+                "$player = New-Object System.Media.SoundPlayer -ArgumentList '{escaped}'; $player.Load(); $player.PlaySync()"
+            )
+        };
         let mut command = Command::new("powershell.exe");
         command
             .args([
@@ -131,10 +150,19 @@ fn spawn_player(path: &PathBuf) -> Result<Child, String> {
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        Command::new("aplay")
+        let player = if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("mp3"))
+        {
+            "mpg123"
+        } else {
+            "aplay"
+        };
+        Command::new(player)
             .arg(path)
             .spawn()
-            .map_err(|e| format!("failed to start aplay: {e}"))
+            .map_err(|e| format!("failed to start {player}: {e}"))
     }
 }
 
@@ -490,6 +518,61 @@ pub async fn speak_text(
 
     stop_child(&playback);
 
+    if config.voice.provider == "openrouter" {
+        let bytes = match crate::openrouter::synthesize_speech_mp3(
+            &client,
+            &config.openrouter,
+            &text,
+            &config.voice.openrouter_voice,
+            config.voice.speed,
+        )
+        .await
+        {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                return Ok(VoiceSpeakResult {
+                    spoken: false,
+                    path: None,
+                    error: Some(e),
+                });
+            }
+        };
+        let path = match speech_path(&app, "mp3") {
+            Ok(path) => path,
+            Err(e) => {
+                return Ok(VoiceSpeakResult {
+                    spoken: false,
+                    path: None,
+                    error: Some(e),
+                });
+            }
+        };
+        if let Err(e) = fs::write(&path, &bytes) {
+            return Ok(VoiceSpeakResult {
+                spoken: false,
+                path: None,
+                error: Some(format!("failed to write speech MP3: {e}")),
+            });
+        }
+        return Ok(match spawn_player(&path) {
+            Ok(child) => {
+                if let Ok(mut guard) = playback.child.lock() {
+                    *guard = Some(child);
+                }
+                VoiceSpeakResult {
+                    spoken: true,
+                    path: Some(path.to_string_lossy().to_string()),
+                    error: None,
+                }
+            }
+            Err(e) => VoiceSpeakResult {
+                spoken: false,
+                path: Some(path.to_string_lossy().to_string()),
+                error: Some(e),
+            },
+        });
+    }
+
     let payload = json!({
         "text": text,
         "voice": config.voice.voice,
@@ -529,7 +612,7 @@ pub async fn speak_text(
             });
         }
     };
-    let path = match speech_path(&app) {
+    let path = match speech_path(&app, "wav") {
         Ok(path) => path,
         Err(e) => {
             return Ok(VoiceSpeakResult {

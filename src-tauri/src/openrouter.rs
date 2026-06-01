@@ -93,6 +93,28 @@ struct EmbeddingsResponse {
     data: Vec<EmbeddingItem>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+struct TranscriptionResponse {
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    usage: Option<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenRouterTranscribeAudioRequest {
+    pub audio_data_base64: String,
+    pub format: String,
+    pub language: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct OpenRouterTranscribeAudioResponse {
+    pub text: String,
+    pub usage: Option<serde_json::Value>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct OpenRouterSelectedModels {
     pub general_model: String,
@@ -121,6 +143,8 @@ pub struct OpenRouterChatParams {
     pub model: String,
     pub messages: Vec<ChatMessage>,
 }
+
+const MAX_TRANSCRIPTION_AUDIO_BASE64_BYTES: usize = 32 * 1024 * 1024;
 
 fn openrouter_error(message: impl Into<String>) -> OllamaError {
     OllamaError {
@@ -177,6 +201,23 @@ fn apply_headers<'a>(
         request
     } else {
         request.header("X-Title", app_title.trim())
+    }
+}
+
+fn normalize_audio_format(format: &str) -> Result<String, String> {
+    match format
+        .trim()
+        .trim_start_matches('.')
+        .to_lowercase()
+        .as_str()
+    {
+        "wav" | "mp3" | "flac" | "m4a" | "ogg" | "webm" | "aac" => {
+            Ok(format.trim().trim_start_matches('.').to_lowercase())
+        }
+        "" => Err("Audio format is required.".to_string()),
+        other => Err(format!(
+            "Unsupported audio format for OpenRouter STT: {other}"
+        )),
     }
 }
 
@@ -348,6 +389,136 @@ pub async fn embed_texts(
     Ok(vectors)
 }
 
+pub async fn synthesize_speech_mp3(
+    client: &reqwest::Client,
+    config: &OpenRouterSection,
+    input: &str,
+    voice: &str,
+    speed: f64,
+) -> Result<Vec<u8>, String> {
+    let api_key = config.api_key.trim();
+    if api_key.is_empty() {
+        return Err("Add an OpenRouter API key in Settings first.".to_string());
+    }
+    let model = config.tts_model.trim();
+    if model.is_empty() {
+        return Err("Choose an OpenRouter TTS model in Settings.".to_string());
+    }
+    let voice = voice.trim();
+    if voice.is_empty() {
+        return Err("Choose an OpenRouter TTS voice in Settings.".to_string());
+    }
+    let text = input.trim();
+    if text.is_empty() {
+        return Err("Nothing speakable.".to_string());
+    }
+
+    let url = format!("{}/audio/speech", api_base(config));
+    let response = apply_headers(
+        client
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(60))
+            .json(&json!({
+                "model": model,
+                "input": text,
+                "voice": voice,
+                "response_format": "mp3",
+                "speed": speed,
+            })),
+        api_key,
+        &config.site_url,
+        &config.app_title,
+    )
+    .send()
+    .await
+    .map_err(|e| format!("failed to create OpenRouter speech: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "OpenRouter TTS returned HTTP {}: {}",
+            response.status().as_u16(),
+            response.text().await.unwrap_or_default()
+        ));
+    }
+
+    response
+        .bytes()
+        .await
+        .map(|bytes| bytes.to_vec())
+        .map_err(|e| format!("failed to read OpenRouter speech audio: {e}"))
+}
+
+pub async fn transcribe_audio_base64(
+    client: &reqwest::Client,
+    config: &OpenRouterSection,
+    audio_data_base64: &str,
+    format: &str,
+    language: Option<&str>,
+) -> Result<OpenRouterTranscribeAudioResponse, String> {
+    let api_key = config.api_key.trim();
+    if api_key.is_empty() {
+        return Err("Add an OpenRouter API key in Settings first.".to_string());
+    }
+    let model = config.stt_model.trim();
+    if model.is_empty() {
+        return Err("Choose an OpenRouter STT model in Settings.".to_string());
+    }
+    let format = normalize_audio_format(format)?;
+    let audio_data_base64 = audio_data_base64.trim();
+    if audio_data_base64.is_empty() {
+        return Err("No audio data was provided.".to_string());
+    }
+    if audio_data_base64.len() > MAX_TRANSCRIPTION_AUDIO_BASE64_BYTES {
+        return Err("Audio is too large to transcribe in one request.".to_string());
+    }
+
+    let mut payload = json!({
+        "model": model,
+        "input_audio": {
+            "data": audio_data_base64,
+            "format": format,
+        },
+    });
+    if let Some(language) = language.map(str::trim).filter(|s| !s.is_empty()) {
+        payload["language"] = json!(language);
+    }
+
+    let url = format!("{}/audio/transcriptions", api_base(config));
+    let response = apply_headers(
+        client
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(75))
+            .json(&payload),
+        api_key,
+        &config.site_url,
+        &config.app_title,
+    )
+    .send()
+    .await
+    .map_err(|e| format!("failed to transcribe audio with OpenRouter: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "OpenRouter STT returned HTTP {}: {}",
+            response.status().as_u16(),
+            response.text().await.unwrap_or_default()
+        ));
+    }
+
+    let body = response
+        .json::<TranscriptionResponse>()
+        .await
+        .map_err(|e| format!("failed to decode OpenRouter transcription: {e}"))?;
+    let text = body.text.trim().to_string();
+    if text.is_empty() {
+        return Err("OpenRouter returned an empty transcription.".to_string());
+    }
+    Ok(OpenRouterTranscribeAudioResponse {
+        text,
+        usage: body.usage,
+    })
+}
+
 pub async fn stream_openrouter_chat(
     params: OpenRouterChatParams,
     client: &reqwest::Client,
@@ -477,6 +648,24 @@ pub async fn openrouter_list_models(
     })
 }
 
+#[tauri::command]
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub async fn openrouter_transcribe_audio(
+    request: OpenRouterTranscribeAudioRequest,
+    client: State<'_, reqwest::Client>,
+    config: State<'_, parking_lot::RwLock<AppConfig>>,
+) -> Result<OpenRouterTranscribeAudioResponse, String> {
+    let config = config.read().openrouter.clone();
+    transcribe_audio_base64(
+        &client,
+        &config,
+        &request.audio_data_base64,
+        &request.format,
+        request.language.as_deref(),
+    )
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,5 +709,16 @@ mod tests {
             value["content"][1]["image_url"]["url"],
             "data:image/jpeg;base64,abc"
         );
+    }
+
+    #[test]
+    fn normalize_audio_format_accepts_common_browser_formats() {
+        assert_eq!(normalize_audio_format("webm").unwrap(), "webm");
+        assert_eq!(normalize_audio_format(".M4A").unwrap(), "m4a");
+    }
+
+    #[test]
+    fn normalize_audio_format_rejects_unknown_formats() {
+        assert!(normalize_audio_format("exe").is_err());
     }
 }

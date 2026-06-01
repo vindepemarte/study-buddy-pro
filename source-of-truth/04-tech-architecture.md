@@ -7,7 +7,7 @@ The app is a Tauri v2 desktop app with a React/TypeScript frontend and Rust back
 ## Local Services
 
 - Ollama runs the local LLM.
-- OpenRouter is the API-first inference provider when configured in Settings. It can handle chat, direct screenshot/image turns through a vision-capable model, embeddings, and future speech models while local storage remains the source of memory truth.
+- OpenRouter is the API-first inference provider when configured in Settings. It can handle chat, direct screenshot/image turns through a vision-capable model, embeddings, OpenRouter STT model selection, and OpenRouter TTS playback while local storage remains the source of memory truth.
 - MLX-VLM is the optional Apple Silicon vision-understanding runtime for Study Pack indexing.
 - Supertonic runs as a bundled local HTTP TTS sidecar on loopback. Packaged builds copy the bundled manager to the writable app-local data directory before creating the Python venv/runtime.
 - SearXNG and the reader run through Docker for local web search. Search is optional on Windows beta and must not block core tutor readiness.

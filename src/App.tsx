@@ -141,6 +141,34 @@ function resolveReadyPaths(
   return paths;
 }
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () =>
+      reject(reader.error ?? new Error('Audio read failed'));
+    reader.onload = () => {
+      const value = String(reader.result ?? '');
+      resolve(value.includes(',') ? value.split(',')[1] : value);
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+function formatFromMimeType(mimeType: string): string {
+  const lower = mimeType.toLowerCase();
+  if (lower.includes('webm')) return 'webm';
+  if (lower.includes('ogg')) return 'ogg';
+  if (lower.includes('mpeg') || lower.includes('mp3')) return 'mp3';
+  if (lower.includes('wav')) return 'wav';
+  if (lower.includes('mp4') || lower.includes('m4a')) return 'm4a';
+  return 'webm';
+}
+
+interface OpenRouterTranscribeAudioResponse {
+  text: string;
+  usage?: unknown;
+}
+
 /**
  * Submit intents that can be deferred while attached images finish
  * processing. The `useEffect` watching `attachedImages` switches on
@@ -492,12 +520,17 @@ function App() {
   const voiceStartRequestedRef = useRef(false);
 
   useEffect(() => {
-    if (!config.voice.enabled || voiceStartRequestedRef.current) return;
+    if (
+      !config.voice.enabled ||
+      config.voice.provider !== 'supertonic' ||
+      voiceStartRequestedRef.current
+    )
+      return;
     voiceStartRequestedRef.current = true;
     void invoke('voice_start').catch(() => {
       // Missing Supertonic is surfaced by explicit voice health/setup checks.
     });
-  }, [config.voice.enabled]);
+  }, [config.voice.enabled, config.voice.provider]);
 
   const {
     conversationId,
@@ -656,6 +689,11 @@ function App() {
   /** Images attached to the current (unsent) message. Blob URLs render
    *  immediately; file paths are set asynchronously after Rust processing. */
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const [isVoiceTranscribing, setIsVoiceTranscribing] = useState(false);
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
   /** URL of the image currently open in the preview modal (blob or asset URL). */
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   /**
@@ -664,6 +702,17 @@ function App() {
    * null = no active drag.
    */
   const [isDragOver, setIsDragOver] = useState<'normal' | 'max' | null>(null);
+
+  useEffect(() => {
+    return () => {
+      voiceRecorderRef.current?.stream.getTracks().forEach((track) => {
+        track.stop();
+      });
+      voiceStreamRef.current?.getTracks().forEach((track) => {
+        track.stop();
+      });
+    };
+  }, []);
 
   /** When the user submits while images are still processing, the submit
    *  intent is stored here. The effect below watches `attachedImages` and
@@ -1919,6 +1968,120 @@ function App() {
   const handleJustNew = useCallback(() => {
     resetForNewConversation();
   }, [resetForNewConversation]);
+
+  const handleVoiceInput = useCallback(async () => {
+    if (isVoiceRecording) {
+      voiceRecorderRef.current?.stop();
+      return;
+    }
+
+    if (!config.openrouter.configured) {
+      setCaptureError(
+        'Add an OpenRouter API key in Settings to use voice input.',
+      );
+      setShakeAskBar(true);
+      return;
+    }
+    if (
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === 'undefined'
+    ) {
+      setCaptureError('Voice input is not available in this WebView.');
+      return;
+    }
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      setCaptureError(
+        `Could not access the microphone: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+          ? 'audio/ogg;codecs=opus'
+          : '';
+    const recorder = new MediaRecorder(
+      stream,
+      mimeType ? { mimeType } : undefined,
+    );
+    voiceChunksRef.current = [];
+    voiceStreamRef.current = stream;
+    voiceRecorderRef.current = recorder;
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) voiceChunksRef.current.push(event.data);
+    };
+    recorder.onerror = () => {
+      setIsVoiceRecording(false);
+      setIsVoiceTranscribing(false);
+      stream.getTracks().forEach((track) => track.stop());
+      setCaptureError('Voice input recording failed.');
+    };
+    recorder.onstop = () => {
+      setIsVoiceRecording(false);
+      stream.getTracks().forEach((track) => track.stop());
+      voiceStreamRef.current = null;
+      const chunks = voiceChunksRef.current;
+      voiceChunksRef.current = [];
+      if (chunks.length === 0) return;
+      const type = recorder.mimeType || mimeType || 'audio/webm';
+      const audio = new Blob(chunks, { type });
+      const format = formatFromMimeType(type);
+      setIsVoiceTranscribing(true);
+      void blobToBase64(audio)
+        .then((audioDataBase64) =>
+          invoke<OpenRouterTranscribeAudioResponse>(
+            'openrouter_transcribe_audio',
+            {
+              request: {
+                audioDataBase64,
+                format,
+                language: null,
+              },
+            },
+          ),
+        )
+        .then((result) => {
+          setCaptureError(null);
+          setQuery((prev) => {
+            const prefix = prev.trimEnd();
+            return prefix ? `${prefix} ${result.text}` : result.text;
+          });
+          requestAnimationFrame(() => {
+            inputRef.current?.focus();
+            if (inputRef.current) {
+              inputRef.current.style.height = 'auto';
+              inputRef.current.style.height = `${Math.min(
+                inputRef.current.scrollHeight,
+                144,
+              )}px`;
+            }
+          });
+        })
+        .catch((err) => {
+          setCaptureError(
+            `Could not transcribe voice input: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        })
+        .finally(() => {
+          setIsVoiceTranscribing(false);
+        });
+    };
+
+    setCaptureError(null);
+    recorder.start();
+    setIsVoiceRecording(true);
+  }, [config.openrouter.configured, isVoiceRecording, setCaptureError]);
 
   /**
    * Handles newly attached image files. Creates blob URLs immediately for
@@ -3203,7 +3366,9 @@ function App() {
     if (
       (query.trim().length === 0 && attachedImages.length === 0) ||
       isGenerating ||
-      isSubmitPending
+      isSubmitPending ||
+      isVoiceRecording ||
+      isVoiceTranscribing
     )
       return;
 
@@ -3494,6 +3659,8 @@ function App() {
     query,
     isGenerating,
     isSubmitPending,
+    isVoiceRecording,
+    isVoiceTranscribing,
     executeSubmit,
     handleScreenSubmit,
     handleExtractSubmit,
@@ -3625,6 +3792,10 @@ function App() {
    * 3. Ollama generation active: delegate to the streaming cancel.
    */
   const handleCancel = useCallback(() => {
+    if (isVoiceRecording) {
+      voiceRecorderRef.current?.stop();
+      return;
+    }
     if (isSubmitPending && pendingSubmitRef.current) {
       // Case 1: image-processing pending. Restore input state.
       setQuery(pendingSubmitRef.current.query);
@@ -3656,7 +3827,13 @@ function App() {
     void cancel();
     setSearchActive(false);
     requestAnimationFrame(() => inputRef.current?.focus());
-  }, [isSubmitPending, cancel, setSearchActive, setSelectedContext]);
+  }, [
+    isSubmitPending,
+    isVoiceRecording,
+    cancel,
+    setSearchActive,
+    setSelectedContext,
+  ]);
 
   /**
    * Persists the user's model choice via the backend and closes the picker panel.
@@ -4334,6 +4511,9 @@ function App() {
                             onImageRemove={handleImageRemove}
                             onImagePreview={handleAskBarImagePreview}
                             onScreenshot={handleScreenshot}
+                            onVoiceInput={handleVoiceInput}
+                            isVoiceInputActive={isVoiceRecording}
+                            isVoiceTranscribing={isVoiceTranscribing}
                             isDragOver={isDragOver ?? undefined}
                             onModelPickerToggle={
                               !isOpenRouterProvider && ollamaReachable

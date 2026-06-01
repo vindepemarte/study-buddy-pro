@@ -1,6 +1,6 @@
 # Study Buddy Pro
 
-Study Buddy Pro is a local-first desktop tutor forked from Thuki. It keeps the floating overlay, screenshot context, optional local Ollama chat, and local search pipeline, then adds a study-buddy direction: guided explanations, adaptive quizzes, vocabulary mastery, learner memory, OpenRouter API routing, semantic Study Pack search, and Supertonic text-to-speech.
+Study Buddy Pro is a local-first desktop tutor forked from Thuki. It keeps the floating overlay, screenshot context, optional local Ollama chat, and local search pipeline, then adds a study-buddy direction: guided explanations, adaptive quizzes, vocabulary mastery, learner memory, OpenRouter API routing, semantic Study Pack search, and selectable local/API text-to-speech.
 
 The goal is not to complete homework for a student. The app should help the student understand the material, identify gaps, explain difficult words, ask for original examples, quiz one step at a time, and adapt from mistakes.
 
@@ -13,6 +13,7 @@ The goal is not to complete homework for a student. The app should help the stud
 - Natural study routing for phrases like "I can't understand this".
 - Local learner tables in SQLite for study sessions, learning events, vocabulary attempts, quiz attempts, and mastery state.
 - Supertonic voice settings and Tauri commands for health, style listing, speech playback, stop, start, and stop.
+- OpenRouter TTS playback through the selected speech model and voice, plus an OpenRouter STT command that uses the selected transcription model.
 - Startup voice launch attempt when voice is enabled. Packaged builds copy the bundled Supertonic manager into the app-local data directory before starting it.
 - Windows beta support for `Ctrl+Space`, screen capture, Supertonic startup, and OCR through local Ollama vision model `gemma4:e2b`.
 - Optional Apple Silicon MLX Vision enrichment for Study Packs. `/remember` can combine Apple Vision OCR with local MLX-VLM structured page notes before indexing saved screenshots.
@@ -27,6 +28,8 @@ Required for API-first chat:
 2. Set `Inference provider` to `openrouter`.
 3. Add your OpenRouter API key.
 4. Click `Refresh models` and choose chat, vision, embedding, speech-to-text, and text-to-speech models.
+
+For API speech, set `Voice provider` to `openrouter` in Settings and choose an `OpenRouter voice` supported by the selected TTS model. Local Supertonic remains the default/offline voice provider.
 
 Optional for fully local chat:
 

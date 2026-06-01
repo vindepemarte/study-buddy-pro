@@ -143,8 +143,12 @@ pub const DEFAULT_READER_URL: &str = "http://127.0.0.1:25018";
 /// Supertonic local TTS defaults. The sidecar binds to loopback only.
 pub const DEFAULT_VOICE_ENABLED: bool = true;
 pub const DEFAULT_VOICE_AUTO_SPEAK_STUDY: bool = true;
+/// Voice provider used by `speak_text`: `supertonic` for the bundled local
+/// sidecar, or `openrouter` for API speech through `/audio/speech`.
+pub const DEFAULT_VOICE_PROVIDER: &str = "supertonic";
 pub const DEFAULT_VOICE_BASE_URL: &str = "http://127.0.0.1:7788";
 pub const DEFAULT_VOICE_NAME: &str = "M1";
+pub const DEFAULT_VOICE_OPENROUTER_VOICE: &str = "nova";
 pub const DEFAULT_VOICE_LANG: &str = "auto";
 pub const DEFAULT_VOICE_STEPS: u32 = 8;
 pub const DEFAULT_VOICE_SPEED: f64 = 1.05;
@@ -355,8 +359,10 @@ pub const ALLOWED_FIELDS: &[(&str, &str)] = &[
     // [voice]
     ("voice", "enabled"),
     ("voice", "auto_speak_study"),
+    ("voice", "provider"),
     ("voice", "base_url"),
     ("voice", "voice"),
+    ("voice", "openrouter_voice"),
     ("voice", "lang"),
     ("voice", "steps"),
     ("voice", "speed"),
