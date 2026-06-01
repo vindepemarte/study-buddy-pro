@@ -379,9 +379,11 @@ pub(crate) fn read_document(path: &Path) -> Result<DocumentMut, ConfigError> {
 /// Locates `[section][key]` inside `doc` and overwrites it with `value`,
 /// preserving the existing TOML type. Rejects type drift with `TypeMismatch`.
 ///
-/// If the key is absent from the section (e.g. the user hand-edited it out),
-/// a new item is inserted with the type inferred from the JSON value rather
-/// than returning an error. Inference rules for absent keys:
+/// If the section is absent from an older config file but exists in
+/// `AppConfig::default()`, the default section table is inserted first. If the
+/// key is absent from the section (e.g. the user hand-edited it out), a new
+/// item is inserted with the type inferred from the JSON value rather than
+/// returning an error. Inference rules for absent keys:
 ///
 /// | JSON type             | Inserted TOML type |
 /// | :-------------------- | :----------------- |
@@ -410,6 +412,14 @@ pub(crate) fn patch_document(
     key: &str,
     value: JsonValue,
 ) -> Result<(), ConfigError> {
+    if doc.get(section).is_none() {
+        let default_section =
+            schema_template_section(section).ok_or_else(|| ConfigError::UnknownSection {
+                section: section.to_string(),
+            })?;
+        doc.insert(section, default_section);
+    }
+
     let table = doc
         .get_mut(section)
         .and_then(Item::as_table_mut)
@@ -437,6 +447,18 @@ pub(crate) fn patch_document(
     Ok(())
 }
 
+fn schema_defaults_doc() -> DocumentMut {
+    let defaults_str = toml::to_string_pretty(&AppConfig::default())
+        .expect("AppConfig is always serializable to TOML");
+    defaults_str
+        .parse()
+        .expect("defaults serialize to a parseable TOML document")
+}
+
+fn schema_template_section(section: &str) -> Option<Item> {
+    schema_defaults_doc().get(section).cloned()
+}
+
 /// Returns the `Item` that `AppConfig::default()` produces for `(section, key)`
 /// after a TOML round-trip. The serialized defaults document is the closest
 /// thing we have to a schema reflection: every tunable field in `AppConfig`
@@ -448,12 +470,7 @@ pub(crate) fn patch_document(
 /// (impossible in practice — callers gate on that allowlist first — but the
 /// `Option` keeps this function honest at the type boundary).
 fn schema_template_item(section: &str, key: &str) -> Option<Item> {
-    let defaults_str = toml::to_string_pretty(&AppConfig::default())
-        .expect("AppConfig is always serializable to TOML");
-    let defaults_doc: DocumentMut = defaults_str
-        .parse()
-        .expect("defaults serialize to a parseable TOML document");
-    defaults_doc
+    schema_defaults_doc()
         .get(section)
         .and_then(Item::as_table)
         .and_then(|t| t.get(key))

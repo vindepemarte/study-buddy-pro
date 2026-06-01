@@ -322,6 +322,27 @@ fn patch_document_unknown_section_errors() {
 }
 
 #[test]
+fn patch_document_inserts_missing_allowed_section_from_defaults() {
+    let mut doc = parse_sample();
+    assert!(doc.get("openrouter").is_none());
+
+    patch_document(&mut doc, "openrouter", "api_key", json!("sk-or-test")).unwrap();
+
+    let table = doc
+        .get("openrouter")
+        .and_then(|item| item.as_table())
+        .expect("openrouter table inserted");
+    assert_eq!(
+        table.get("api_key").and_then(|item| item.as_str()),
+        Some("sk-or-test")
+    );
+    assert_eq!(
+        table.get("base_url").and_then(|item| item.as_str()),
+        Some(crate::config::defaults::DEFAULT_OPENROUTER_BASE_URL)
+    );
+}
+
+#[test]
 fn patch_document_inserts_missing_float_field() {
     // Simulate a hand-edited config where `overlay_width` was removed.
     let toml = "[window]\nmax_chat_height = 648.0\n";
@@ -656,6 +677,21 @@ fn write_field_to_disk_accepts_search_pipeline_wall_clock_budget() {
 
     let on_disk = std::fs::read_to_string(&path).unwrap();
     assert!(on_disk.contains("pipeline_wall_clock_budget_s = 90"));
+}
+
+#[test]
+fn write_field_to_disk_persists_new_openrouter_section_for_legacy_config() {
+    let dir = tempdir();
+    let path = dir.join("config.toml");
+    std::fs::write(&path, SAMPLE_CONFIG).unwrap();
+
+    let resolved = write_field_to_disk(&path, "openrouter", "api_key", json!("sk-or-test"))
+        .expect("legacy config without [openrouter] should be upgraded on save");
+
+    assert_eq!(resolved.openrouter.api_key, "sk-or-test");
+    let on_disk = std::fs::read_to_string(&path).unwrap();
+    assert!(on_disk.contains("[openrouter]"));
+    assert!(on_disk.contains("api_key = \"sk-or-test\""));
 }
 
 #[test]
