@@ -59,13 +59,30 @@ fn python_version_supported(candidate: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn python_candidates() -> Vec<String> {
+    let mut candidates = vec![
+        "python3.12".to_string(),
+        "python3.11".to_string(),
+        "/opt/homebrew/bin/python3.12".to_string(),
+        "/opt/homebrew/bin/python3.11".to_string(),
+        "/opt/homebrew/opt/python@3.12/bin/python3.12".to_string(),
+        "/opt/homebrew/opt/python@3.11/bin/python3.11".to_string(),
+        "/usr/local/bin/python3.12".to_string(),
+        "/usr/local/bin/python3.11".to_string(),
+        "/usr/local/opt/python@3.12/bin/python3.12".to_string(),
+        "/usr/local/opt/python@3.11/bin/python3.11".to_string(),
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12".to_string(),
+        "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3.11".to_string(),
+        "python3".to_string(),
+    ];
+    candidates.dedup();
+    candidates
+}
+
 fn python_command() -> Option<String> {
-    for candidate in ["python3.12", "python3.11", "python3"] {
-        if python_version_supported(candidate) {
-            return Some(candidate.to_string());
-        }
-    }
-    None
+    python_candidates()
+        .into_iter()
+        .find(|candidate| python_version_supported(candidate))
 }
 
 fn runtime_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -379,5 +396,15 @@ mod tests {
     #[test]
     fn trim_model_output_removes_blank_edges() {
         assert_eq!(trim_model_output("\n\nA\n\nB  \n"), "A\nB");
+    }
+
+    #[test]
+    fn python_candidates_include_homebrew_specific_versions() {
+        let candidates = python_candidates();
+        assert!(candidates.contains(&"/opt/homebrew/bin/python3.12".to_string()));
+        assert!(candidates.contains(&"/opt/homebrew/bin/python3.11".to_string()));
+        assert!(!candidates
+            .iter()
+            .any(|candidate| candidate.contains("3.13")));
     }
 }

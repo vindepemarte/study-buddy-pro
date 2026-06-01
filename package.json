@@ -1,6 +1,6 @@
 {
   "name": "study-buddy-pro",
-  "version": "0.14.4",
+  "version": "0.14.5",
   "description": "A local-first adaptive study buddy with voice, screenshots, quizzes, and local learner memory",
   "license": "Apache-2.0",
   "repository": {
