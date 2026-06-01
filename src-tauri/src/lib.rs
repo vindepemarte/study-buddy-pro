@@ -458,6 +458,12 @@ fn show_settings_window(app_handle: &tauri::AppHandle) {
     let _ = window.set_focus();
 }
 
+#[tauri::command]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn open_settings_window(app_handle: tauri::AppHandle) {
+    show_settings_window(&app_handle);
+}
+
 /// Centers the "What's New" update window horizontally on its monitor and
 /// places it below the macOS menu bar, mirroring `position_settings_window`
 /// but for the update window's 600 px width.
@@ -1868,6 +1874,7 @@ pub fn run() {
             commands::cancel_generation,
             #[cfg(not(coverage))]
             commands::open_url,
+            open_settings_window,
             #[cfg(not(coverage))]
             search::search_pipeline,
             #[cfg(not(coverage))]

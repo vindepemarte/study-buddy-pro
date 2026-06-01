@@ -54,20 +54,21 @@ Backend commands:
 - `openrouter_list_models`
 - `openrouter_transcribe_audio`
 
-OpenRouter chat must use the same stream event shape as the Ollama route so the frontend renderer stays provider-neutral. Settings must store the API key, base URL, model ids, and attribution headers locally, then fetch the model catalog so users can choose models by input/output modality and see pricing. When OpenRouter is selected, direct image/screenshot chat routes to the configured general model or vision model; Ollama capability gates must not block that path. OpenRouter speech uses `/audio/speech`; transcription uses `/audio/transcriptions` with base64 audio and the selected STT model.
+OpenRouter chat must use the same stream event shape as the Ollama route so the frontend renderer stays provider-neutral. Settings must store the API key, base URL, model ids, and attribution headers locally, then fetch the model catalog so users can choose models by input/output modality and see pricing. When OpenRouter is selected, direct image/screenshot chat routes to the configured general model or vision model; Ollama capability gates must not block that path. `/search` planner, judge, and synthesis calls use the selected OpenRouter general/reasoning model while local SearXNG and reader services still provide web retrieval. OpenRouter speech uses `/audio/speech`; transcription uses `/audio/transcriptions` with base64 audio and the selected STT model.
 
 ## Setup
 
 Backend setup status should check:
 
 - OS
-- Ollama reachability
-- active/installed model
-- Windows OCR model `gemma4:e2b` when running on Windows
+- selected inference provider
+- OpenRouter API key when provider is `openrouter`
+- Ollama reachability and active/installed model when provider is `ollama`
+- Windows OCR model `gemma4:e2b` when running on Windows, reported for local OCR workflows
 - MLX Vision runtime status when running on Apple Silicon macOS
-- Python availability for the Supertonic manager
-- writable Supertonic runtime availability
-- Supertonic health
+- selected voice provider
+- Python availability, writable runtime availability, and health for Supertonic when local voice is selected
+- OpenRouter TTS model/key readiness when API voice is selected
 - Docker availability
 - search services health
 

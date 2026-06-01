@@ -17,11 +17,49 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::ChatMessage;
+use crate::config::OpenRouterSection;
 
 use super::types::{
     Action, JudgeVerdict, RouterJudgeOutput, SearchError, SearxResult, Sufficiency,
 };
 use crate::trace::{BoundRecorder, RecorderEvent};
+
+/// LLM backend used by non-streaming router and judge calls.
+#[derive(Clone, Debug)]
+pub enum SearchJsonBackend {
+    Ollama {
+        endpoint: String,
+        model: String,
+        num_ctx: u32,
+    },
+    OpenRouter {
+        base_url: String,
+        api_key: String,
+        app_title: String,
+        site_url: String,
+        model: String,
+    },
+}
+
+impl SearchJsonBackend {
+    pub fn ollama(endpoint: String, model: String, num_ctx: u32) -> Self {
+        Self::Ollama {
+            endpoint,
+            model,
+            num_ctx,
+        }
+    }
+
+    pub fn openrouter(config: &OpenRouterSection, model: String) -> Self {
+        Self::OpenRouter {
+            base_url: config.base_url.clone(),
+            api_key: config.api_key.clone(),
+            app_title: config.app_title.clone(),
+            site_url: config.site_url.clone(),
+            model,
+        }
+    }
+}
 
 /// Synthesis system prompt: instructs the answering LLM to cite sources and
 /// avoid meta-commentary over the reference material.
@@ -204,6 +242,34 @@ struct OllamaResponseBody {
     message: OllamaResponseMessage,
 }
 
+#[derive(Serialize)]
+struct OpenRouterJsonRequest {
+    model: String,
+    messages: Vec<serde_json::Value>,
+    stream: bool,
+    response_format: serde_json::Value,
+    temperature: f64,
+    top_p: f64,
+    max_tokens: i32,
+}
+
+#[derive(Deserialize)]
+struct OpenRouterChoiceMessage {
+    #[serde(default)]
+    content: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct OpenRouterChoice {
+    message: OpenRouterChoiceMessage,
+}
+
+#[derive(Deserialize)]
+struct OpenRouterResponseBody {
+    #[serde(default)]
+    choices: Vec<OpenRouterChoice>,
+}
+
 // ─── Shared HTTP helper ──────────────────────────────────────────────────────
 
 /// Sends a single non-streaming JSON-mode chat request to Ollama and returns
@@ -336,6 +402,178 @@ fn transport_error(
     Err(SearchError::LlmUnavailable)
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn request_json_with_backend(
+    backend: &SearchJsonBackend,
+    client: &reqwest::Client,
+    messages: Vec<ChatMessage>,
+    format: serde_json::Value,
+    cancel_token: &CancellationToken,
+    timeout_secs: u64,
+    num_predict: i32,
+    recorder: &Arc<BoundRecorder>,
+    stage: &str,
+    schema_name: &str,
+) -> Result<String, SearchError> {
+    match backend {
+        SearchJsonBackend::Ollama {
+            endpoint,
+            model,
+            num_ctx,
+        } => {
+            request_json(
+                endpoint,
+                model,
+                client,
+                messages,
+                format,
+                cancel_token,
+                timeout_secs,
+                *num_ctx,
+                num_predict,
+                recorder,
+                stage,
+            )
+            .await
+        }
+        SearchJsonBackend::OpenRouter {
+            base_url,
+            api_key,
+            app_title,
+            site_url,
+            model,
+        } => {
+            request_openrouter_json(
+                base_url,
+                api_key,
+                app_title,
+                site_url,
+                model,
+                client,
+                messages,
+                format,
+                cancel_token,
+                timeout_secs,
+                num_predict,
+                recorder,
+                stage,
+                schema_name,
+            )
+            .await
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn request_openrouter_json(
+    base_url: &str,
+    api_key: &str,
+    app_title: &str,
+    site_url: &str,
+    model: &str,
+    client: &reqwest::Client,
+    messages: Vec<ChatMessage>,
+    format: serde_json::Value,
+    cancel_token: &CancellationToken,
+    timeout_secs: u64,
+    num_predict: i32,
+    recorder: &Arc<BoundRecorder>,
+    stage: &str,
+    schema_name: &str,
+) -> Result<String, SearchError> {
+    let endpoint = format!("{}/chat/completions", base_url.trim().trim_end_matches('/'));
+    let body = OpenRouterJsonRequest {
+        model: model.to_string(),
+        messages: messages
+            .iter()
+            .map(|message| {
+                serde_json::json!({
+                    "role": message.role,
+                    "content": message.content,
+                })
+            })
+            .collect(),
+        stream: false,
+        response_format: serde_json::json!({
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_name,
+                "strict": true,
+                "schema": format,
+            }
+        }),
+        temperature: 0.0,
+        top_p: 1.0,
+        max_tokens: num_predict,
+    };
+    let request_body_value =
+        serde_json::to_value(&body).unwrap_or(serde_json::json!({"_serialize_error": true}));
+    let started = std::time::Instant::now();
+    let emit = |response_raw: Option<String>, error: Option<String>| {
+        recorder.record(RecorderEvent::LlmCall {
+            stage: stage.to_string(),
+            endpoint: endpoint.clone(),
+            request_body: request_body_value.clone(),
+            response_raw,
+            latency_ms: started.elapsed().as_millis() as u64,
+            error,
+        });
+    };
+
+    let mut request = client
+        .post(&endpoint)
+        .bearer_auth(api_key.trim())
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .json(&body);
+    if !site_url.trim().is_empty() {
+        request = request.header("HTTP-Referer", site_url.trim());
+    }
+    if !app_title.trim().is_empty() {
+        request = request.header("X-Title", app_title.trim());
+    }
+
+    let response = tokio::select! {
+        biased;
+        _ = cancel_token.cancelled() => return cancelled_before_send(emit),
+        res = request.send() => match res {
+            Ok(r) => r,
+            Err(e) => return transport_error(emit, e),
+        },
+    };
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let raw = response.text().await.ok();
+        emit(raw, Some(format!("http {status}")));
+        return Err(SearchError::LlmHttp(status));
+    }
+
+    let raw_body = tokio::select! {
+        biased;
+        _ = cancel_token.cancelled() => return cancelled_before_send(emit),
+        body = response.text() => body.map_err(|_| SearchError::LlmBadJson)?,
+    };
+    let parsed = match serde_json::from_str::<OpenRouterResponseBody>(&raw_body) {
+        Ok(p) => p,
+        Err(_) => {
+            emit(Some(raw_body), Some("malformed json".into()));
+            return Err(SearchError::LlmBadJson);
+        }
+    };
+    let Some(content) = parsed
+        .choices
+        .first()
+        .and_then(|choice| choice.message.content.as_deref())
+    else {
+        emit(Some(raw_body), Some("missing message content".into()));
+        return Err(SearchError::LlmBadJson);
+    };
+
+    let content = content.to_string();
+    emit(Some(raw_body), None);
+    Ok(content)
+}
+
 // ─── Merged router+judge call ────────────────────────────────────────────────
 
 /// Merged router+judge call that returns [`RouterJudgeOutput`] in a single
@@ -360,6 +598,7 @@ fn transport_error(
 /// recovered, it returns [`SearchError::Router`] instead of silently forcing a
 /// web search, because malformed router output should fail closed.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub async fn call_router_merged(
     endpoint: &str,
     model: &str,
@@ -372,6 +611,31 @@ pub async fn call_router_merged(
     num_ctx: u32,
     recorder: &Arc<BoundRecorder>,
 ) -> Result<RouterJudgeOutput, SearchError> {
+    let backend = SearchJsonBackend::ollama(endpoint.to_string(), model.to_string(), num_ctx);
+    call_router_merged_with_backend(
+        &backend,
+        client,
+        history,
+        query,
+        today,
+        cancel_token,
+        timeout_secs,
+        recorder,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn call_router_merged_with_backend(
+    backend: &SearchJsonBackend,
+    client: &reqwest::Client,
+    history: &[ChatMessage],
+    query: &str,
+    today: &str,
+    cancel_token: &CancellationToken,
+    timeout_secs: u64,
+    recorder: &Arc<BoundRecorder>,
+) -> Result<RouterJudgeOutput, SearchError> {
     if cancel_token.is_cancelled() {
         return Err(SearchError::Cancelled);
     }
@@ -380,18 +644,17 @@ pub async fn call_router_merged(
 
     // First attempt: standard prompt.
     let messages = build_router_messages(&system, history, query);
-    let raw = request_json(
-        endpoint,
-        model,
+    let raw = request_json_with_backend(
+        backend,
         client,
         messages,
         router_output_schema(),
         cancel_token,
         timeout_secs,
-        num_ctx,
         ROUTER_MAX_TOKENS,
         recorder,
         "router",
+        "search_router",
     )
     .await?;
     if let Some(output) = try_parse_router_output(&raw) {
@@ -406,18 +669,17 @@ pub async fn call_router_merged(
         "{query}\n\nReply with ONLY the JSON object described by the system prompt. No prose, no markdown fences, no explanation."
     );
     let retry_messages = build_router_messages(&system, history, &strict_query);
-    let retry_raw = request_json(
-        endpoint,
-        model,
+    let retry_raw = request_json_with_backend(
+        backend,
         client,
         retry_messages,
         router_output_schema(),
         cancel_token,
         timeout_secs,
-        num_ctx,
         ROUTER_MAX_TOKENS,
         recorder,
         "router_retry",
+        "search_router",
     )
     .await?;
     if let Some(output) = try_parse_router_output(&retry_raw) {
@@ -543,6 +805,7 @@ fn parse_router_sufficiency(value: &str) -> Option<Sufficiency> {
 /// so the pipeline always produces a result rather than surfacing a cryptic
 /// parse error.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub async fn call_judge(
     endpoint: &str,
     model: &str,
@@ -552,6 +815,31 @@ pub async fn call_judge(
     cancel_token: &CancellationToken,
     timeout_secs: u64,
     num_ctx: u32,
+    stage: JudgeStage,
+    recorder: &Arc<BoundRecorder>,
+) -> Result<JudgeVerdict, SearchError> {
+    let backend = SearchJsonBackend::ollama(endpoint.to_string(), model.to_string(), num_ctx);
+    call_judge_with_backend(
+        &backend,
+        client,
+        query,
+        sources,
+        cancel_token,
+        timeout_secs,
+        stage,
+        recorder,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn call_judge_with_backend(
+    backend: &SearchJsonBackend,
+    client: &reqwest::Client,
+    query: &str,
+    sources: &[JudgeSource],
+    cancel_token: &CancellationToken,
+    timeout_secs: u64,
     stage: JudgeStage,
     recorder: &Arc<BoundRecorder>,
 ) -> Result<JudgeVerdict, SearchError> {
@@ -581,18 +869,17 @@ pub async fn call_judge(
             images: None,
         },
     ];
-    let raw = request_json(
-        endpoint,
-        model,
+    let raw = request_json_with_backend(
+        backend,
         client,
         messages,
         judge_output_schema(),
         cancel_token,
         timeout_secs,
-        num_ctx,
         crate::config::defaults::JUDGE_MAX_TOKENS,
         recorder,
         stage_label,
+        "search_judge",
     )
     .await?;
     if let Ok(mut verdict) = crate::search::judge::parse_verdict(&raw) {
@@ -628,18 +915,17 @@ pub async fn call_judge(
             images: None,
         },
     ];
-    let retry_raw = request_json(
-        endpoint,
-        model,
+    let retry_raw = request_json_with_backend(
+        backend,
         client,
         retry_messages,
         judge_output_schema(),
         cancel_token,
         timeout_secs,
-        num_ctx,
         crate::config::defaults::JUDGE_MAX_TOKENS,
         recorder,
         stage_retry_label,
+        "search_judge",
     )
     .await?;
     if let Ok(mut verdict) = crate::search::judge::parse_verdict(&retry_raw) {
@@ -1294,6 +1580,58 @@ mod router_judge_tests {
         .expect("schema-constrained router call should parse");
 
         assert_eq!(output.action, Action::Clarify);
+    }
+
+    #[tokio::test]
+    async fn merged_router_uses_openrouter_chat_completions_schema_format() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(wiremock::matchers::body_string_contains(
+                "\"response_format\":{",
+            ))
+            .and(wiremock::matchers::body_string_contains(
+                "\"type\":\"json_schema\"",
+            ))
+            .and(wiremock::matchers::body_string_contains("\"search_router\""))
+            .and(wiremock::matchers::body_string_contains("\"strict\":true"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{
+                    "message": {
+                        "content": "{\"action\":\"proceed\",\"clarifying_question\":null,\"history_sufficiency\":\"insufficient\",\"optimized_query\":\"traffic signs practice quiz\"}"
+                    }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let token = CancellationToken::new();
+        let backend = SearchJsonBackend::OpenRouter {
+            base_url: server.uri(),
+            api_key: "test-key".to_string(),
+            app_title: "Study Buddy Pro".to_string(),
+            site_url: "https://example.test".to_string(),
+            model: "openrouter/model".to_string(),
+        };
+        let output = call_router_merged_with_backend(
+            &backend,
+            &client,
+            &[],
+            "what does this sign mean?",
+            "2026-04-18",
+            &token,
+            ROUTER_TIMEOUT_SECS,
+            &noop_recorder(),
+        )
+        .await
+        .expect("OpenRouter router call should parse");
+
+        assert!(matches!(output.action, Action::Proceed));
+        assert_eq!(
+            output.optimized_query.as_deref(),
+            Some("traffic signs practice quiz")
+        );
     }
 
     #[tokio::test]

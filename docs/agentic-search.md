@@ -8,7 +8,7 @@ A deep dive into Thuki's agentic RAG search pipeline: how retrieval-augmented ge
 
 ## Setup
 
-> **Roadmap:** First-class, out-of-box `/search` support (bundled native sidecars or pre-built container images shipped with the app) is planned. Today, enabling `/search` requires cloning this repository to run the local Docker services described below. Track progress and contribute in the project's [GitHub issues](https://github.com/quiet-node/thuki/issues).
+> **Roadmap:** First-class, out-of-box `/search` support (bundled native sidecars or pre-built container images shipped with the app) is planned. Today, enabling `/search` requires running the local Docker services described below. Track progress and contribute in the project's [GitHub issues](https://github.com/vindepemarte/study-buddy-pro/issues).
 
 The `/search` command depends on two local Docker containers: a **SearXNG** meta-search engine and a **Trafilatura** reader. Both run on `127.0.0.1` only, so every query and every fetched page stays on your machine.
 
@@ -16,13 +16,13 @@ The `/search` command depends on two local Docker containers: a **SearXNG** meta
 
 - [Docker Desktop](https://www.docker.com/get-started) installed and running.
 - [Bun](https://bun.sh) installed (used to launch the Compose stack).
-- A local clone of the Thuki repository.
+- A local clone of the Study Buddy Pro repository.
 
 **Start the services**
 
 ```bash
-git clone https://github.com/quiet-node/thuki.git
-cd thuki
+git clone https://github.com/vindepemarte/study-buddy-pro.git
+cd study-buddy-pro
 bun install
 bun run search-box:start
 ```
@@ -69,7 +69,7 @@ RAG, or retrieval-augmented generation, is the right idea: retrieve real informa
 
 Products like Perplexity, ChatGPT Search, and You.com ARI have built sophisticated systems that handle all of the problems above. They are impressive. But every query you send to them travels to a company's server. For questions about medical conditions, legal situations, unreleased projects, personal finances, or anything else a user would rather keep private, that is a hard constraint.
 
-Thuki's `/search` is built to the same standard as these cloud products, but every step runs on the user's machine. No query ever leaves the user's computer except as an anonymous request to a public search engine, which is no different from typing the same query into a browser.
+Thuki's `/search` is built to the same standard as these cloud products, but the retrieval stack runs on the user's machine. If the selected inference provider is Ollama, the LLM planning and answer synthesis stay local too. If the selected inference provider is OpenRouter, the planner, judge, and synthesis prompts are sent to OpenRouter while search aggregation and page reading remain local.
 
 ### Thuki's `/search` command: Agentic RAG search pipeline
 
@@ -125,17 +125,17 @@ To illustrate how hard this problem is: a naive approach might try to strip `<na
 
 ---
 
-### Ollama: the local AI model runner
+### AI provider: OpenRouter or Ollama
 
-[Ollama](https://ollama.com) is the piece that actually runs the AI model. It is a local server that loads a language model (such as Llama, Mistral, Qwen, or Gemma) into the computer's memory and responds to chat requests over a local API. Every time Thuki needs to "think," it sends a request to Ollama.
+The `/search` pipeline uses the inference provider selected in Settings. OpenRouter is the API-first route: Study Buddy Pro sends planner, judge, and synthesis calls to the configured general or reasoning model through OpenRouter's chat-completions API. Ollama remains the local route: it loads a language model (such as Llama, Mistral, Qwen, or Gemma) into the computer's memory and responds to chat requests over a local API.
 
-In the `/search` pipeline, Ollama is called three times in the typical case:
+In the `/search` pipeline, the selected provider is called three times in the typical case:
 
 1. To analyze the query and decide what to do (one call).
 2. To judge whether retrieved sources are good enough to answer the question (one or more calls).
 3. To synthesize the final answer and stream it back to the user (one call).
 
-**Why local:** No API key. No usage tracking. No query content sent to any external service. The model runs on the user's CPU or GPU. Cold starts (the first query after the model loads) take longer; subsequent queries are fast.
+**Why two routes:** OpenRouter makes setup fast and lets users choose stronger API models. Ollama keeps the full LLM path local for users who want no API calls. In both modes, SearXNG and the reader remain local services.
 
 ---
 
@@ -145,7 +145,7 @@ With those three services defined, here is the complete flow for a `/search` inv
 
 ```mermaid
 flowchart TD
-    A["User types /search &lt;question&gt;"] --> B["Step 1: Query Analysis<br>(search_plan prompt to Ollama)"]
+    A["User types /search &lt;question&gt;"] --> B["Step 1: Query Analysis<br>(search_plan prompt to selected provider)"]
     B -->|"CLARIFY: ambiguous query"| C["Stream follow-up question to user"]
     B -->|"PROCEED: history sufficient"| D["Answer from conversation history"]
     B -->|"PROCEED: need fresh search"| E["Step 2: SearXNG Search<br>(returns title + URL + snippet per result)"]
@@ -173,7 +173,7 @@ Now, each step in detail.
 
 The pipeline's first move is not to search. It is to think about the question.
 
-A single call goes out to Ollama using a system prompt called `search_plan`. The model receives the user's question and the full conversation history from this session. It returns a small JSON object that tells the pipeline exactly what to do next.
+A single call goes out to the selected inference provider using a system prompt called `search_plan`. The model receives the user's question and the full conversation history from this session. It returns a small JSON object that tells the pipeline exactly what to do next.
 
 ```json
 {
@@ -228,7 +228,7 @@ After reranking, the top 10 URLs advance to the next stage.
 
 Before fetching any full pages (which requires network requests and takes time), the pipeline pauses and asks a question: "Do the short snippets we already have contain enough information to answer this question?"
 
-This is the first judge call. A second call goes out to Ollama, this time using the `search_judge` system prompt. The model receives the user's original question and all the snippets from the top 10 results. It returns a structured verdict:
+This is the first judge call. A second call goes out to the selected provider, this time using the `search_judge` system prompt. The model receives the user's original question and all the snippets from the top 10 results. It returns a structured verdict:
 
 ```json
 {
@@ -314,7 +314,7 @@ The gap loop is where the pipeline becomes truly agentic. Instead of giving up w
 
 Synthesis is the final step: turning the collected evidence into an answer and streaming it to the user.
 
-**Building the prompt.** The pipeline assembles a message sequence for Ollama:
+**Building the prompt.** The pipeline assembles a message sequence for the selected provider:
 
 1. The synthesis system prompt (`search_synthesis.txt`), which tells the model how to write answers: open with the direct answer, follow with supporting context the reader would naturally want, use inline citations, aim for substance rather than padding. Today's date is injected into the prompt so the model can correctly reason about time-sensitive questions.
 2. All completed conversation turns from this session, so the model has conversational continuity.
@@ -323,7 +323,7 @@ Synthesis is the final step: turning the collected evidence into an answer and s
 
 **How citations work.** The sources are numbered `[1]`, `[2]`, `[3]`, and so on. The synthesis prompt instructs the model to use these numbers as inline citations when it makes a claim: "Tesla was founded in 2003 `[1]`". Before synthesis begins, the pipeline emits a final `Sources` event to the frontend that lists the exact URLs in the exact order they were numbered. This guarantees that when the user sees `[3]` in the answer, source 3 in the sources footer is the page that claim came from.
 
-**Streaming.** Ollama streams the answer token by token: each word or subword arrives as it is generated and appears in the UI in real time. The user sees the answer build progressively rather than waiting for the entire response to finish before anything appears. If the user closes the overlay mid-stream, the pipeline drops the HTTP connection (Ollama stops generating), emits a cancellation event, and discards the partial response without saving it.
+**Streaming.** The selected provider streams the answer token by token: each word or subword arrives as it is generated and appears in the UI in real time. The user sees the answer build progressively rather than waiting for the entire response to finish before anything appears. If the user closes the overlay mid-stream, the pipeline drops the HTTP connection, emits a cancellation event, and discards the partial response without saving it.
 
 **Substance, not length.** Small local models tend to produce very short answers when left to their own devices. The synthesis prompt explicitly pushes against this. For questions about people, the model is instructed to include their role, their notable work, and relevant facts. For companies, the founding year and what they do. For events, when, where, and why they matter. For processes, the key steps. For comparisons, the dimensions that actually differentiate the options. Two to four tight paragraphs with real information is the target, not a one-liner that technically answers the question but leaves the reader with follow-up questions.
 
@@ -333,7 +333,7 @@ Synthesis is the final step: turning the collected evidence into an answer and s
 
 Every step in the pipeline that involves AI processing, content extraction, or search aggregation runs on the user's machine. Here is exactly where data goes at each stage:
 
-**Query text:** The user's question goes to the local Ollama instance for routing (Step 1) and synthesis (Step 9). It also goes to the local SearXNG instance for search (Step 2). None of these leave the machine.
+**Query text:** The user's question goes to the selected inference provider for routing, judging, and synthesis. In Ollama mode, that provider is the local Ollama instance. In OpenRouter mode, those LLM prompts are sent to OpenRouter. The query also goes to the local SearXNG instance for search (Step 2).
 
 **Web search requests:** SearXNG sends queries to upstream engines (Google, Bing, DuckDuckGo, etc.). These requests originate from the SearXNG container running on the user's machine, not from the user's browser, so upstream engines see the container's requests rather than the user's browser fingerprint or IP address.
 
@@ -341,7 +341,7 @@ Every step in the pipeline that involves AI processing, content extraction, or s
 
 **Conversation history:** Stored locally. Never transmitted anywhere.
 
-No API keys. No accounts. No telemetry. No persistent connection to any Anthropic or third-party service.
+No telemetry. The Ollama route needs no API key or account. The OpenRouter route uses the locally stored API key only for the model calls the user selected.
 
 ---
 

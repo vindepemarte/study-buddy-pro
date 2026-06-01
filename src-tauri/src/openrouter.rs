@@ -170,6 +170,19 @@ pub fn selected_chat_model(config: &OpenRouterSection, has_images: bool) -> Stri
     config.general_model.trim().to_string()
 }
 
+pub fn selected_reasoning_model(config: &OpenRouterSection) -> String {
+    if config.use_general_model && !config.general_model.trim().is_empty() {
+        return config.general_model.trim().to_string();
+    }
+    if !config.reasoning_model.trim().is_empty() {
+        return config.reasoning_model.trim().to_string();
+    }
+    if !config.chat_model.trim().is_empty() {
+        return config.chat_model.trim().to_string();
+    }
+    config.general_model.trim().to_string()
+}
+
 fn selected_models(config: &OpenRouterSection) -> OpenRouterSelectedModels {
     OpenRouterSelectedModels {
         general_model: config.general_model.clone(),
@@ -695,6 +708,21 @@ mod tests {
         let mut config = config();
         config.use_general_model = true;
         assert_eq!(selected_chat_model(&config, true), "general/model");
+    }
+
+    #[test]
+    fn selected_reasoning_model_uses_reasoning_when_split() {
+        let mut config = config();
+        config.reasoning_model = "reasoning/model".to_string();
+        assert_eq!(selected_reasoning_model(&config), "reasoning/model");
+    }
+
+    #[test]
+    fn selected_reasoning_model_prefers_general_when_enabled() {
+        let mut config = config();
+        config.use_general_model = true;
+        config.reasoning_model = "reasoning/model".to_string();
+        assert_eq!(selected_reasoning_model(&config), "general/model");
     }
 
     #[test]

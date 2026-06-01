@@ -33,8 +33,8 @@ use crate::commands::{
 use super::chunker;
 use super::config;
 use super::llm::{
-    build_answer_from_context_messages, build_synthesis_messages, call_judge, call_router_merged,
-    JudgeSource, JudgeStage,
+    build_answer_from_context_messages, build_synthesis_messages, call_judge_with_backend,
+    call_router_merged_with_backend, JudgeSource, JudgeStage, SearchJsonBackend,
 };
 use super::reader;
 use super::rerank;
@@ -433,6 +433,7 @@ fn can_answer_from_history(history_snapshot: &[ChatMessage]) -> bool {
 /// for these fields were added in Task 17. The frontend serializes and passes
 /// them back via `persist_message` when saving the turn.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 async fn run_streaming_branch(
     endpoint: &str,
     model: &str,
@@ -449,51 +450,182 @@ async fn run_streaming_branch(
     recorder: &Arc<BoundRecorder>,
     stage: &str,
 ) {
+    let backend = SearchSynthesisBackend::ollama(endpoint.to_string(), model.to_string(), num_ctx);
+    run_streaming_branch_with_backend(
+        &backend,
+        client,
+        cancel_token,
+        messages,
+        history,
+        epoch_at_start,
+        user_msg,
+        warnings,
+        metadata,
+        on_event,
+        recorder,
+        stage,
+    )
+    .await;
+}
+
+#[derive(Clone, Debug)]
+pub enum SearchSynthesisBackend {
+    Ollama {
+        endpoint: String,
+        model: String,
+        num_ctx: u32,
+    },
+    OpenRouter {
+        base_url: String,
+        api_key: String,
+        app_title: String,
+        site_url: String,
+        model: String,
+    },
+}
+
+impl SearchSynthesisBackend {
+    pub fn ollama(endpoint: String, model: String, num_ctx: u32) -> Self {
+        Self::Ollama {
+            endpoint,
+            model,
+            num_ctx,
+        }
+    }
+
+    pub fn openrouter(config: &crate::config::OpenRouterSection, model: String) -> Self {
+        Self::OpenRouter {
+            base_url: config.base_url.clone(),
+            api_key: config.api_key.clone(),
+            app_title: config.app_title.clone(),
+            site_url: config.site_url.clone(),
+            model,
+        }
+    }
+
+    pub fn model(&self) -> &str {
+        match self {
+            Self::Ollama { model, .. } | Self::OpenRouter { model, .. } => model,
+        }
+    }
+
+    fn endpoint_label(&self) -> String {
+        match self {
+            Self::Ollama { endpoint, .. } => endpoint.clone(),
+            Self::OpenRouter { base_url, .. } => {
+                format!("{}/chat/completions", base_url.trim().trim_end_matches('/'))
+            }
+        }
+    }
+
+    fn num_ctx(&self) -> Option<u32> {
+        match self {
+            Self::Ollama { num_ctx, .. } => Some(*num_ctx),
+            Self::OpenRouter { .. } => None,
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_streaming_branch_with_backend(
+    backend: &SearchSynthesisBackend,
+    client: &reqwest::Client,
+    cancel_token: CancellationToken,
+    messages: Vec<ChatMessage>,
+    history: &ConversationHistory,
+    epoch_at_start: u64,
+    user_msg: ChatMessage,
+    warnings: Vec<SearchWarning>,
+    metadata: Option<SearchMetadata>,
+    on_event: &impl Fn(SearchEvent),
+    recorder: &Arc<BoundRecorder>,
+    stage: &str,
+) {
     // Snapshot the request body before streaming starts so the trace can show
     // exactly what prompt the synthesis call was sent.
     let request_body = serde_json::json!({
-        "endpoint": endpoint,
-        "model": model,
+        "endpoint": backend.endpoint_label(),
+        "model": backend.model(),
         "messages": messages.iter().map(|m| serde_json::json!({
             "role": m.role,
             "content": m.content,
         })).collect::<Vec<_>>(),
-        "num_ctx": num_ctx,
+        "num_ctx": backend.num_ctx(),
     });
     let started = std::time::Instant::now();
     let token_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let token_count_for_callback = token_count.clone();
     let saw_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let saw_done_for_callback = saw_done.clone();
-    let accumulated = stream_ollama_chat(
-        OllamaChatParams {
-            endpoint: endpoint.to_string(),
-            model: model.to_string(),
-            messages,
-            think: false,
-            keep_alive: None,
+    let accumulated = match backend {
+        SearchSynthesisBackend::Ollama {
+            endpoint,
+            model,
             num_ctx,
-        },
-        client,
-        cancel_token,
-        |chunk| match chunk {
-            StreamChunk::Done => {
-                saw_done_for_callback.store(true, Ordering::SeqCst);
-            }
-            other => {
-                if matches!(other, StreamChunk::Token(_)) {
-                    token_count_for_callback.fetch_add(1, Ordering::SeqCst);
-                }
-                on_event(translate_chunk(other))
-            }
-        },
-    )
-    .await;
+        } => {
+            stream_ollama_chat(
+                OllamaChatParams {
+                    endpoint: endpoint.to_string(),
+                    model: model.to_string(),
+                    messages,
+                    think: false,
+                    keep_alive: None,
+                    num_ctx: *num_ctx,
+                },
+                client,
+                cancel_token,
+                |chunk| match chunk {
+                    StreamChunk::Done => {
+                        saw_done_for_callback.store(true, Ordering::SeqCst);
+                    }
+                    other => {
+                        if matches!(other, StreamChunk::Token(_)) {
+                            token_count_for_callback.fetch_add(1, Ordering::SeqCst);
+                        }
+                        on_event(translate_chunk(other))
+                    }
+                },
+            )
+            .await
+        }
+        SearchSynthesisBackend::OpenRouter {
+            base_url,
+            api_key,
+            app_title,
+            site_url,
+            model,
+        } => {
+            crate::openrouter::stream_openrouter_chat(
+                crate::openrouter::OpenRouterChatParams {
+                    base_url: base_url.clone(),
+                    api_key: api_key.clone(),
+                    app_title: app_title.clone(),
+                    site_url: site_url.clone(),
+                    model: model.clone(),
+                    messages,
+                },
+                client,
+                cancel_token,
+                |chunk| match chunk {
+                    StreamChunk::Done => {
+                        saw_done_for_callback.store(true, Ordering::SeqCst);
+                    }
+                    other => {
+                        if matches!(other, StreamChunk::Token(_)) {
+                            token_count_for_callback.fetch_add(1, Ordering::SeqCst);
+                        }
+                        on_event(translate_chunk(other))
+                    }
+                },
+            )
+            .await
+        }
+    };
 
     record_streaming_llm_call(
         recorder,
         stage,
-        endpoint,
+        &backend.endpoint_label(),
         request_body,
         &accumulated,
         token_count.load(Ordering::SeqCst),
@@ -616,13 +748,11 @@ pub trait JudgeCaller: Send + Sync {
 /// Tests must NOT use this struct directly as it would hit a real Ollama
 /// instance. Inject a mock [`RouterJudgeCaller`] instead.
 pub struct DefaultRouterJudge {
-    endpoint: String,
-    model: String,
+    backend: SearchJsonBackend,
     client: reqwest::Client,
     cancel: CancellationToken,
     today: String,
     router_timeout_secs: u64,
-    num_ctx: u32,
     recorder: Arc<BoundRecorder>,
 }
 
@@ -655,13 +785,30 @@ impl DefaultRouterJudge {
         recorder: Arc<BoundRecorder>,
     ) -> Self {
         Self {
-            endpoint,
-            model,
+            backend: SearchJsonBackend::ollama(endpoint, model, num_ctx),
             client,
             cancel,
             today,
             router_timeout_secs,
-            num_ctx,
+            recorder,
+        }
+    }
+
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn new_with_backend(
+        backend: SearchJsonBackend,
+        client: reqwest::Client,
+        cancel: CancellationToken,
+        today: String,
+        router_timeout_secs: u64,
+        recorder: Arc<BoundRecorder>,
+    ) -> Self {
+        Self {
+            backend,
+            client,
+            cancel,
+            today,
+            router_timeout_secs,
             recorder,
         }
     }
@@ -675,16 +822,14 @@ impl RouterJudgeCaller for DefaultRouterJudge {
         history: &[ChatMessage],
         query: &str,
     ) -> Result<RouterJudgeOutput, SearchError> {
-        call_router_merged(
-            &self.endpoint,
-            &self.model,
+        call_router_merged_with_backend(
+            &self.backend,
             &self.client,
             history,
             query,
             &self.today,
             &self.cancel,
             self.router_timeout_secs,
-            self.num_ctx,
             &self.recorder,
         )
         .await
@@ -699,12 +844,10 @@ impl RouterJudgeCaller for DefaultRouterJudge {
 ///
 /// Tests must NOT use this struct directly. Inject a mock [`JudgeCaller`].
 pub struct DefaultJudge {
-    endpoint: String,
-    model: String,
+    backend: SearchJsonBackend,
     client: reqwest::Client,
     cancel: CancellationToken,
     judge_timeout_secs: u64,
-    num_ctx: u32,
     recorder: Arc<BoundRecorder>,
 }
 
@@ -731,12 +874,27 @@ impl DefaultJudge {
         recorder: Arc<BoundRecorder>,
     ) -> Self {
         Self {
-            endpoint,
-            model,
+            backend: SearchJsonBackend::ollama(endpoint, model, num_ctx),
             client,
             cancel,
             judge_timeout_secs,
-            num_ctx,
+            recorder,
+        }
+    }
+
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn new_with_backend(
+        backend: SearchJsonBackend,
+        client: reqwest::Client,
+        cancel: CancellationToken,
+        judge_timeout_secs: u64,
+        recorder: Arc<BoundRecorder>,
+    ) -> Self {
+        Self {
+            backend,
+            client,
+            cancel,
+            judge_timeout_secs,
             recorder,
         }
     }
@@ -751,15 +909,13 @@ impl JudgeCaller for DefaultJudge {
         sources: &[JudgeSource],
         stage: JudgeStage,
     ) -> Result<JudgeVerdict, SearchError> {
-        call_judge(
-            &self.endpoint,
-            &self.model,
+        call_judge_with_backend(
+            &self.backend,
             &self.client,
             query,
             sources,
             &self.cancel,
             self.judge_timeout_secs,
-            self.num_ctx,
             stage,
             &self.recorder,
         )
@@ -800,9 +956,8 @@ fn lock_or_recover<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, 
 
 /// Shared immutable inputs used by the extracted search-pipeline stages.
 struct SearchExecutionContext<'a> {
-    ollama_endpoint: &'a str,
     searxng_endpoint: &'a str,
-    model: &'a str,
+    synthesis_backend: &'a SearchSynthesisBackend,
     client: &'a reqwest::Client,
     cancel_token: &'a CancellationToken,
     chat_system_prompt: &'a str,
@@ -810,7 +965,6 @@ struct SearchExecutionContext<'a> {
     today: &'a str,
     on_event: &'a (dyn Fn(SearchEvent) + Sync),
     runtime_config: &'a config::SearchRuntimeConfig,
-    num_ctx: u32,
     /// Forensic per-turn recorder. Wraps a [`crate::trace::NoopRecorder`] in
     /// production unless `runtime_config.trace_enabled` is set.
     recorder: &'a Arc<BoundRecorder>,
@@ -1057,9 +1211,8 @@ async fn stream_synthesis_from_sources(
     emit_trace(shared.on_event, compose_step);
     (shared.on_event)(SearchEvent::Composing);
 
-    run_streaming_branch(
-        shared.ollama_endpoint,
-        shared.model,
+    run_streaming_branch_with_backend(
+        shared.synthesis_backend,
         shared.client,
         shared.cancel_token.clone(),
         messages,
@@ -1069,7 +1222,6 @@ async fn stream_synthesis_from_sources(
         warnings,
         metadata,
         &shared.on_event,
-        shared.num_ctx,
         shared.recorder,
         "synthesis",
     )
@@ -1164,9 +1316,8 @@ async fn run_history_answer_branch(
         user_query,
     );
 
-    run_streaming_branch(
-        shared.ollama_endpoint,
-        shared.model,
+    run_streaming_branch_with_backend(
+        shared.synthesis_backend,
         shared.client,
         shared.cancel_token.clone(),
         messages,
@@ -1176,7 +1327,6 @@ async fn run_history_answer_branch(
         Vec::new(),
         None,
         &shared.on_event,
-        shared.num_ctx,
         shared.recorder,
         "answer_from_context",
     )
@@ -1807,6 +1957,48 @@ pub async fn run_agentic(
     num_ctx: u32,
     recorder: &Arc<BoundRecorder>,
 ) -> Result<(), SearchError> {
+    let synthesis_backend =
+        SearchSynthesisBackend::ollama(ollama_endpoint.to_string(), model.to_string(), num_ctx);
+    run_agentic_with_backend(
+        ollama_endpoint,
+        searxng_endpoint,
+        reader_base_url,
+        &synthesis_backend,
+        client,
+        cancel_token,
+        chat_system_prompt,
+        history,
+        query,
+        today,
+        on_event,
+        router,
+        judge,
+        runtime_config,
+        num_ctx,
+        recorder,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn run_agentic_with_backend(
+    _ollama_endpoint: &str,
+    searxng_endpoint: &str,
+    reader_base_url: &str,
+    synthesis_backend: &SearchSynthesisBackend,
+    client: &reqwest::Client,
+    cancel_token: CancellationToken,
+    chat_system_prompt: &str,
+    history: &ConversationHistory,
+    query: String,
+    today: &str,
+    on_event: &(dyn Fn(SearchEvent) + Sync),
+    router: &dyn RouterJudgeCaller,
+    judge: &dyn JudgeCaller,
+    runtime_config: &config::SearchRuntimeConfig,
+    _num_ctx: u32,
+    recorder: &Arc<BoundRecorder>,
+) -> Result<(), SearchError> {
     let trimmed = query.trim();
     if trimmed.is_empty() {
         return Err(SearchError::EmptyQuery);
@@ -1818,7 +2010,7 @@ pub async fn run_agentic(
         recorder,
         &turn_id,
         &user_query,
-        model,
+        synthesis_backend.model(),
         runtime_config,
         history,
     );
@@ -1861,9 +2053,8 @@ pub async fn run_agentic(
     };
 
     let shared = SearchExecutionContext {
-        ollama_endpoint,
         searxng_endpoint,
-        model,
+        synthesis_backend,
         client,
         cancel_token: &cancel_token,
         chat_system_prompt,
@@ -1871,7 +2062,6 @@ pub async fn run_agentic(
         today,
         on_event,
         runtime_config,
-        num_ctx,
         recorder,
     };
 
@@ -2185,9 +2375,8 @@ pub async fn run_agentic(
                     });
                     emit_trace(on_event, compose_step);
                     on_event(SearchEvent::Composing);
-                    run_streaming_branch(
-                        ollama_endpoint,
-                        model,
+                    run_streaming_branch_with_backend(
+                        synthesis_backend,
                         client,
                         cancel_token,
                         messages,
@@ -2197,7 +2386,6 @@ pub async fn run_agentic(
                         warnings,
                         Some(metadata),
                         &on_event,
-                        num_ctx,
                         recorder,
                         "synthesis_snippet_only",
                     )

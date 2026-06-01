@@ -7,6 +7,8 @@ use crate::config::AppConfig;
 #[derive(Clone, Serialize)]
 pub struct SetupReadiness {
     pub os: String,
+    pub inference_provider: String,
+    pub openrouter_configured: bool,
     pub ollama_reachable: bool,
     pub ollama_models: usize,
     pub windows_ocr_model: Option<String>,
@@ -18,6 +20,7 @@ pub struct SetupReadiness {
     pub mlx_vlm_runtime_path: Option<String>,
     pub supertonic_runtime_found: bool,
     pub supertonic_runtime_path: Option<String>,
+    pub voice_provider: String,
     pub voice_reachable: bool,
     pub docker_available: bool,
     pub searxng_reachable: bool,
@@ -207,6 +210,9 @@ pub async fn get_setup_readiness(
     app_config: State<'_, RwLock<AppConfig>>,
 ) -> Result<SetupReadiness, String> {
     let config = app_config.read().clone();
+    let inference_provider = config.inference.provider.trim().to_string();
+    let openrouter_configured = !config.openrouter.api_key.trim().is_empty();
+    let voice_provider = config.voice.provider.trim().to_string();
     let (ollama_reachable, installed_models) =
         ollama_models(&client, &config.inference.ollama_url).await;
     let ollama_models = installed_models.len();
@@ -218,11 +224,16 @@ pub async fn get_setup_readiness(
     let windows_ocr_model_installed = windows_ocr_model
         .as_deref()
         .is_none_or(|model| installed_models.iter().any(|installed| installed == model));
-    let voice_reachable = endpoint_ok(
-        &client,
-        format!("{}/v1/health", config.voice.base_url.trim_end_matches('/')),
-    )
-    .await;
+    let voice_uses_supertonic = config.voice.enabled && voice_provider != "openrouter";
+    let voice_reachable = if voice_uses_supertonic {
+        endpoint_ok(
+            &client,
+            format!("{}/v1/health", config.voice.base_url.trim_end_matches('/')),
+        )
+        .await
+    } else {
+        true
+    };
     let searxng_reachable = endpoint_ok(
         &client,
         format!(
@@ -244,33 +255,57 @@ pub async fn get_setup_readiness(
     let search_runtime_path = search_runtime_dir(&app)
         .ok()
         .map(|path| path.to_string_lossy().to_string());
-    let core_ready = ollama_reachable
-        && ollama_models > 0
-        && windows_ocr_model_installed
-        && python_available
-        && runtime.found
-        && voice_reachable;
+    let inference_ready = if inference_provider == "openrouter" {
+        openrouter_configured
+    } else {
+        ollama_reachable && ollama_models > 0 && windows_ocr_model_installed
+    };
+    let voice_runtime_ready = if !config.voice.enabled {
+        true
+    } else if voice_provider == "openrouter" {
+        openrouter_configured && !config.openrouter.tts_model.trim().is_empty()
+    } else {
+        python_available && runtime.found && voice_reachable
+    };
+    let core_ready = inference_ready && voice_runtime_ready;
     let ready = core_ready;
 
     let mut missing = Vec::new();
-    if !ollama_reachable {
-        missing.push("ollama".to_string());
-    } else if ollama_models == 0 {
-        missing.push("ollama_model".to_string());
-    }
-    if !windows_ocr_model_installed {
-        if let Some(model) = windows_ocr_model.as_deref() {
-            missing.push(format!("windows_ocr_model:{model}"));
+    if inference_provider == "openrouter" {
+        if !openrouter_configured {
+            missing.push("openrouter_api_key".to_string());
+        }
+    } else {
+        if !ollama_reachable {
+            missing.push("ollama".to_string());
+        } else if ollama_models == 0 {
+            missing.push("ollama_model".to_string());
+        }
+        if !windows_ocr_model_installed {
+            if let Some(model) = windows_ocr_model.as_deref() {
+                missing.push(format!("windows_ocr_model:{model}"));
+            }
         }
     }
-    if !python_available {
-        missing.push("python3".to_string());
-    }
-    if !runtime.found {
-        missing.push("supertonic_runtime".to_string());
-    }
-    if !voice_reachable {
-        missing.push("supertonic_voice".to_string());
+    if config.voice.enabled {
+        if voice_provider == "openrouter" {
+            if !openrouter_configured {
+                missing.push("openrouter_voice_api_key".to_string());
+            }
+            if config.openrouter.tts_model.trim().is_empty() {
+                missing.push("openrouter_tts_model".to_string());
+            }
+        } else {
+            if !python_available {
+                missing.push("python3".to_string());
+            }
+            if !runtime.found {
+                missing.push("supertonic_runtime".to_string());
+            }
+            if !voice_reachable {
+                missing.push("supertonic_voice".to_string());
+            }
+        }
     }
 
     let mut warnings = Vec::new();
@@ -288,6 +323,8 @@ pub async fn get_setup_readiness(
 
     Ok(SetupReadiness {
         os: std::env::consts::OS.to_string(),
+        inference_provider,
+        openrouter_configured,
         ollama_reachable,
         ollama_models,
         windows_ocr_model,
@@ -301,6 +338,7 @@ pub async fn get_setup_readiness(
             .and_then(|status| status.runtime_path.clone()),
         supertonic_runtime_found: runtime.found,
         supertonic_runtime_path: runtime.runtime_path,
+        voice_provider,
         voice_reachable,
         docker_available,
         searxng_reachable,

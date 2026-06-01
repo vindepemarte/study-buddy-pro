@@ -18,7 +18,7 @@ The goal is not to complete homework for a student. The app should help the stud
 - Windows beta support for `Ctrl+Space`, screen capture, Supertonic startup, and OCR through local Ollama vision model `gemma4:e2b`.
 - Optional Apple Silicon MLX Vision enrichment for Study Packs. `/remember` can combine Apple Vision OCR with local MLX-VLM structured page notes before indexing saved screenshots.
 - Local Study Pack semantic embeddings. Saved screenshot chunks stay in SQLite; when OpenRouter is configured, embeddings are generated through the selected embedding model and stored locally for hybrid FTS + vector retrieval.
-- Setup readiness command for Ollama, Windows OCR model, Python, optional MLX Vision, voice, Docker, SearXNG, and reader status. Docker search is optional.
+- Setup readiness command for OpenRouter or Ollama inference, Windows OCR model status, optional MLX Vision, selected voice provider, Docker, SearXNG, and reader status. Docker search is optional.
 
 ## Local Runtime
 
@@ -52,13 +52,13 @@ export STUDY_BUDDY_SUPERTONIC_DIR=/Users/vdpm/Documents/codex-projects/supertoni
 
 Packaged builds include `src-tauri/resources/supertonic/native-server`. The app copies that runtime into `$APPLOCALDATA/supertonic` on first launch and calls `native-server/manage.py start --no-wait`. First run may create `.native-venv`, install Supertonic dependencies, and download the model. Python 3.11 or 3.12 must be available.
 
-Required for local search:
+Required for local web retrieval in `/search`:
 
 ```bash
 bun run search-box:start
 ```
 
-Packaged builds also include the search-box resources. Docker Desktop remains optional; `/search` becomes available after the Docker services are started.
+Packaged builds also include the search-box resources. Docker Desktop remains optional; `/search` becomes available after the Docker services are started. The LLM planner, judge, and final answer use whichever inference provider is selected in Settings: OpenRouter in API-first mode or Ollama in local mode.
 
 Optional for richer Study Pack screenshot indexing on Apple Silicon:
 

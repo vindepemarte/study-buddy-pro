@@ -42,6 +42,7 @@ function formatListenAddr(url: string): string {
 }
 
 type ModelSetupState =
+  | { state: 'open_router_api_key_missing' }
   | { state: 'ollama_unreachable' }
   | { state: 'no_models_installed' }
   | {
@@ -193,16 +194,20 @@ export function ModelCheckStep() {
   const ollamaConnected =
     setupState?.state === 'no_models_installed' ||
     setupState?.state === 'missing_required_model';
+  const isWaitingForOpenRouter =
+    setupState?.state === 'open_router_api_key_missing';
   const isWaitingForOllama = setupState?.state === 'ollama_unreachable';
   const isProbing = setupState === null;
 
   const titleSub = isProbing
     ? 'Checking your local Ollama setup…'
-    : ollamaConnected
-      ? setupState?.state === 'missing_required_model'
-        ? `Almost there. Pull ${setupState.required_slug} for Windows OCR.`
-        : "Almost there. Let's pick a local model."
-      : 'Runs Ollama locally. Your study sessions stay on this machine.';
+    : isWaitingForOpenRouter
+      ? 'OpenRouter is selected. Add your API key to start with the API route.'
+      : ollamaConnected
+        ? setupState?.state === 'missing_required_model'
+          ? `Almost there. Pull ${setupState.required_slug} for Windows OCR.`
+          : "Almost there. Let's pick a local model."
+        : 'Runs Ollama locally. Your study sessions stay on this machine.';
 
   return (
     <div
@@ -288,7 +293,9 @@ export function ModelCheckStep() {
           {titleSub}
         </p>
 
-        {!isProbing ? (
+        {isWaitingForOpenRouter ? <OpenRouterKeyPanel /> : null}
+
+        {!isProbing && !isWaitingForOpenRouter ? (
           <Rail
             stepOneActive={isWaitingForOllama}
             stepOneDone={ollamaConnected}
@@ -333,6 +340,71 @@ export function ModelCheckStep() {
           Private by default · All inference runs on your machine
         </p>
       </motion.div>
+    </div>
+  );
+}
+
+function OpenRouterKeyPanel() {
+  const [opening, setOpening] = useState(false);
+
+  const handleOpenSettings = useCallback(async () => {
+    setOpening(true);
+    try {
+      await invoke('open_settings_window');
+    } finally {
+      setOpening(false);
+    }
+  }, []);
+
+  return (
+    <div
+      style={{
+        marginBottom: 16,
+        padding: 12,
+        background: 'rgba(0, 0, 0, 0.25)',
+        border: '1px solid rgba(255, 141, 92, 0.18)',
+        borderRadius: 12,
+      }}
+    >
+      <p
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: '#f0f0f2',
+          margin: 0,
+          letterSpacing: '-0.1px',
+          lineHeight: 1.3,
+        }}
+      >
+        Add OpenRouter API key
+      </p>
+      <p
+        style={{
+          fontSize: 11.5,
+          color: 'rgba(255,255,255,0.45)',
+          margin: '4px 0 12px',
+          lineHeight: 1.5,
+        }}
+      >
+        Settings → Models → OpenRouter, then verify setup again.
+      </p>
+      <button
+        onClick={() => void handleOpenSettings()}
+        disabled={opening}
+        style={{
+          width: '100%',
+          padding: '9px 10px',
+          background: 'rgba(255,141,92,0.12)',
+          border: '1px solid rgba(255,141,92,0.35)',
+          borderRadius: 10,
+          color: '#ffb08a',
+          fontSize: 12.5,
+          fontWeight: 700,
+          cursor: opening ? 'wait' : 'pointer',
+        }}
+      >
+        {opening ? 'Opening…' : 'Open Settings'}
+      </button>
     </div>
   );
 }

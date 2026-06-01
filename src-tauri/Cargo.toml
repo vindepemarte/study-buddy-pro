@@ -1,6 +1,6 @@
 [package]
 name = "study-buddy-pro"
-version = "0.14.8"
+version = "0.14.9"
 description = "Study Buddy Pro: local-first adaptive tutor with voice"
 authors = ["Vindepemarte"]
 license = "Apache-2.0"

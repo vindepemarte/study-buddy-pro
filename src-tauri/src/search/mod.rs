@@ -34,7 +34,7 @@ mod rerank;
 mod searxng;
 mod types;
 
-pub use llm::{JudgeSource, JudgeStage};
+pub use llm::{JudgeSource, JudgeStage, SearchJsonBackend};
 pub use pipeline::{run_agentic, JudgeCaller, RouterJudgeCaller};
 pub use probe::probe;
 pub use types::{
@@ -73,30 +73,64 @@ pub async fn search_pipeline(
     // Snapshot the config once so the entire pipeline sees a consistent view
     // even if the user edits Settings while a search is in flight.
     let app_config = app_config.read().clone();
+    let use_openrouter = app_config.inference.provider.trim() == "openrouter";
     // Resolve the runtime search view from the loaded TOML. The single
     // source of truth lives in `config::defaults`; the loader has already
     // clamped and resolved every field by the time we read it here.
     let runtime_config = config::SearchRuntimeConfig::from_app_config(&app_config);
     let searxng_endpoint = runtime_config.searxng_endpoint();
 
-    // Snapshot the active model slug once from the picker-backed
-    // ActiveModelState; drop the guard before any `.await` so we never
-    // hold a `MutexGuard` across an await point.
-    let model_name = {
-        let guard = active_model_state.0.lock().map_err(|e| e.to_string())?;
-        guard.clone()
-    };
-    let Some(model_name) = model_name else {
-        // Mirrors the chat-path gate: refuse to dispatch with no active
-        // model. The frontend strip already steers the user to the picker
-        // before this point, so this branch is defense-in-depth for the
-        // race where the user's last installed model was removed mid-run.
-        // Emit a dedicated typed event (not a generic Error) so the frontend
-        // can keep `is_first_turn` armed: this bail returns before
-        // `ConversationStart` is recorded, so the next attempt must still
-        // open the trace as a first turn.
-        let _ = on_event.send(SearchEvent::NoModelSelected);
-        return Ok(());
+    let ollama_endpoint = format!(
+        "{}/api/chat",
+        app_config.inference.ollama_url.trim_end_matches('/')
+    );
+    let (model_name, json_backend, synthesis_backend) = if use_openrouter {
+        if app_config.openrouter.api_key.trim().is_empty() {
+            let _ = on_event.send(SearchEvent::Error {
+                message: "OpenRouter is selected. Add an API key in Settings to use /search."
+                    .to_string(),
+            });
+            return Ok(());
+        }
+        let model_name = crate::openrouter::selected_reasoning_model(&app_config.openrouter);
+        (
+            model_name.clone(),
+            llm::SearchJsonBackend::openrouter(&app_config.openrouter, model_name.clone()),
+            pipeline::SearchSynthesisBackend::openrouter(&app_config.openrouter, model_name),
+        )
+    } else {
+        // Snapshot the active model slug once from the picker-backed
+        // ActiveModelState; drop the guard before any `.await` so we never
+        // hold a `MutexGuard` across an await point.
+        let model_name = {
+            let guard = active_model_state.0.lock().map_err(|e| e.to_string())?;
+            guard.clone()
+        };
+        let Some(model_name) = model_name else {
+            // Mirrors the chat-path gate: refuse to dispatch with no active
+            // model. The frontend strip already steers the user to the picker
+            // before this point, so this branch is defense-in-depth for the
+            // race where the user's last installed model was removed mid-run.
+            // Emit a dedicated typed event (not a generic Error) so the frontend
+            // can keep `is_first_turn` armed: this bail returns before
+            // `ConversationStart` is recorded, so the next attempt must still
+            // open the trace as a first turn.
+            let _ = on_event.send(SearchEvent::NoModelSelected);
+            return Ok(());
+        };
+        (
+            model_name.clone(),
+            llm::SearchJsonBackend::ollama(
+                ollama_endpoint.clone(),
+                model_name.clone(),
+                app_config.inference.num_ctx,
+            ),
+            pipeline::SearchSynthesisBackend::ollama(
+                ollama_endpoint.clone(),
+                model_name,
+                app_config.inference.num_ctx,
+            ),
+        )
     };
 
     // Pre-flight: verify both sandbox services are reachable before touching
@@ -113,10 +147,6 @@ pub async fn search_pipeline(
         return Ok(());
     }
 
-    let ollama_endpoint = format!(
-        "{}/api/chat",
-        app_config.inference.ollama_url.trim_end_matches('/')
-    );
     let cancel_token = CancellationToken::new();
     generation.set_token(cancel_token.clone());
 
@@ -173,33 +203,29 @@ pub async fn search_pipeline(
         .unwrap_or(0);
     let token_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 
-    let router = pipeline::DefaultRouterJudge::new(
-        ollama_endpoint.clone(),
-        model_name.clone(),
+    let router = pipeline::DefaultRouterJudge::new_with_backend(
+        json_backend.clone(),
         (*client).clone(),
         cancel_token.clone(),
         today.clone(),
         runtime_config.router_timeout_s,
-        app_config.inference.num_ctx,
         Arc::clone(&recorder),
     );
-    let judge = pipeline::DefaultJudge::new(
-        ollama_endpoint.clone(),
-        model_name.clone(),
+    let judge = pipeline::DefaultJudge::new_with_backend(
+        json_backend,
         (*client).clone(),
         cancel_token.clone(),
         runtime_config.judge_timeout_s,
-        app_config.inference.num_ctx,
         Arc::clone(&recorder),
     );
 
     let recorder_for_pump = Arc::clone(&recorder);
     let token_count_for_pump = Arc::clone(&token_count);
-    let result = pipeline::run_agentic(
+    let result = pipeline::run_agentic_with_backend(
         &ollama_endpoint,
         &searxng_endpoint,
         &runtime_config.reader_url,
-        &model_name,
+        &synthesis_backend,
         &client,
         cancel_token.clone(),
         &app_config.prompt.resolved_system,

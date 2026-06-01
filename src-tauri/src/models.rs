@@ -349,6 +349,10 @@ pub async fn set_active_model(
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum ModelSetupState {
+    /// OpenRouter is selected as the inference provider, but no API key has
+    /// been saved yet. The UI must route the user to Settings rather than
+    /// requiring a local Ollama install.
+    OpenRouterApiKeyMissing,
     /// `/api/tags` could not be reached. Treat as "Ollama is not installed
     /// or not running"; the UI must guide the user to install or start it.
     OllamaUnreachable,
@@ -436,7 +440,20 @@ pub async fn check_model_setup(
     active_model: tauri::State<'_, ActiveModelState>,
     config: tauri::State<'_, parking_lot::RwLock<AppConfig>>,
 ) -> Result<ModelSetupState, String> {
-    let ollama_url = config.read().inference.ollama_url.clone();
+    let config_snapshot = config.read().clone();
+    if config_snapshot.inference.provider.trim() == "openrouter" {
+        if config_snapshot.openrouter.api_key.trim().is_empty() {
+            return Ok(ModelSetupState::OpenRouterApiKeyMissing);
+        }
+        let active_slug =
+            crate::openrouter::selected_chat_model(&config_snapshot.openrouter, false);
+        return Ok(ModelSetupState::Ready {
+            active_slug: active_slug.clone(),
+            installed: vec![active_slug],
+        });
+    }
+
+    let ollama_url = config_snapshot.inference.ollama_url.clone();
     let installed_result = fetch_installed_model_names(&client, &ollama_url).await;
 
     let persisted = {
@@ -1391,6 +1408,13 @@ mod tests {
         assert_eq!(
             unreachable,
             serde_json::json!({"state": "ollama_unreachable"})
+        );
+
+        let openrouter_missing =
+            serde_json::to_value(ModelSetupState::OpenRouterApiKeyMissing).unwrap();
+        assert_eq!(
+            openrouter_missing,
+            serde_json::json!({"state": "open_router_api_key_missing"})
         );
 
         let none = serde_json::to_value(ModelSetupState::NoModelsInstalled).unwrap();

@@ -7,9 +7,9 @@ Status: decided
 Study Buddy Pro starts with guided setup:
 
 1. Check OS and app permissions.
-2. Check Ollama.
-3. Install or guide setup for a vision-capable model; Windows beta requires `gemma4:e2b` for OCR.
-4. Check/start Supertonic TTS from the writable app-local runtime folder.
+2. Check the selected inference provider: OpenRouter API key when API-first mode is selected, or Ollama when the local route is selected.
+3. Install or guide setup for a vision-capable local model when using Ollama; Windows beta reports `gemma4:e2b` for local OCR workflows.
+4. Check/start the selected voice provider: OpenRouter TTS when API speech is selected, or Supertonic from the writable app-local runtime folder when local speech is selected.
 5. Check Docker search services as optional.
 6. Verify a short spoken phrase and a local AI response.
 
