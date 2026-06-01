@@ -106,16 +106,18 @@ export function TextField({
   placeholder,
   errored,
   ariaLabel,
+  type = 'text',
 }: {
   value: string;
   onChange: (next: string) => void;
   placeholder?: string;
   errored?: boolean;
   ariaLabel?: string;
+  type?: 'text' | 'password' | 'url';
 }) {
   return (
     <input
-      type="text"
+      type={type}
       className={`${styles.input} ${errored ? styles.inputError : ''}`}
       value={value}
       onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}

@@ -28,18 +28,22 @@ use super::defaults::{
     BOUNDS_QUOTE_MAX_DISPLAY_CHARS, BOUNDS_QUOTE_MAX_DISPLAY_LINES, BOUNDS_SEARXNG_MAX_RESULTS,
     BOUNDS_TEXT_BASE_PX, BOUNDS_TEXT_LETTER_SPACING_PX, BOUNDS_TEXT_LINE_HEIGHT, BOUNDS_TIMEOUT_S,
     BOUNDS_TOP_K_URLS, BOUNDS_UPDATER_CHECK_INTERVAL_HOURS, BOUNDS_VOICE_MAX_CHUNK_LENGTH,
-    BOUNDS_VOICE_SPEED, BOUNDS_VOICE_STEPS, DEFAULT_JUDGE_TIMEOUT_S,
+    BOUNDS_VOICE_SPEED, BOUNDS_VOICE_STEPS, DEFAULT_INFERENCE_PROVIDER, DEFAULT_JUDGE_TIMEOUT_S,
     DEFAULT_KEEP_WARM_INACTIVITY_MINUTES, DEFAULT_MAX_CHAT_HEIGHT, DEFAULT_MAX_IMAGES,
-    DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX, DEFAULT_OLLAMA_URL, DEFAULT_OVERLAY_WIDTH,
-    DEFAULT_PIPELINE_WALL_CLOCK_BUDGET_S, DEFAULT_QUOTE_MAX_CONTEXT_LENGTH,
-    DEFAULT_QUOTE_MAX_DISPLAY_CHARS, DEFAULT_QUOTE_MAX_DISPLAY_LINES,
-    DEFAULT_READER_BATCH_TIMEOUT_S, DEFAULT_READER_PER_URL_TIMEOUT_S, DEFAULT_READER_URL,
-    DEFAULT_ROUTER_TIMEOUT_S, DEFAULT_SEARCH_TIMEOUT_S, DEFAULT_SEARXNG_MAX_RESULTS,
-    DEFAULT_SEARXNG_URL, DEFAULT_SYSTEM_PROMPT_BASE, DEFAULT_TEXT_BASE_PX,
-    DEFAULT_TEXT_FONT_WEIGHT, DEFAULT_TEXT_LETTER_SPACING_PX, DEFAULT_TEXT_LINE_HEIGHT,
-    DEFAULT_TOP_K_URLS, DEFAULT_UPDATER_CHECK_INTERVAL_HOURS, DEFAULT_UPDATER_MANIFEST_URL,
-    DEFAULT_VOICE_BASE_URL, DEFAULT_VOICE_LANG, DEFAULT_VOICE_MAX_CHUNK_LENGTH, DEFAULT_VOICE_NAME,
-    DEFAULT_VOICE_SPEED, DEFAULT_VOICE_STEPS, SLASH_COMMAND_PROMPT_APPENDIX,
+    DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX, DEFAULT_OLLAMA_URL, DEFAULT_OPENROUTER_APP_TITLE,
+    DEFAULT_OPENROUTER_BASE_URL, DEFAULT_OPENROUTER_CHAT_MODEL, DEFAULT_OPENROUTER_EMBEDDING_MODEL,
+    DEFAULT_OPENROUTER_GENERAL_MODEL, DEFAULT_OPENROUTER_REASONING_MODEL,
+    DEFAULT_OPENROUTER_SITE_URL, DEFAULT_OPENROUTER_STT_MODEL, DEFAULT_OPENROUTER_TTS_MODEL,
+    DEFAULT_OPENROUTER_VISION_MODEL, DEFAULT_OVERLAY_WIDTH, DEFAULT_PIPELINE_WALL_CLOCK_BUDGET_S,
+    DEFAULT_QUOTE_MAX_CONTEXT_LENGTH, DEFAULT_QUOTE_MAX_DISPLAY_CHARS,
+    DEFAULT_QUOTE_MAX_DISPLAY_LINES, DEFAULT_READER_BATCH_TIMEOUT_S,
+    DEFAULT_READER_PER_URL_TIMEOUT_S, DEFAULT_READER_URL, DEFAULT_ROUTER_TIMEOUT_S,
+    DEFAULT_SEARCH_TIMEOUT_S, DEFAULT_SEARXNG_MAX_RESULTS, DEFAULT_SEARXNG_URL,
+    DEFAULT_SYSTEM_PROMPT_BASE, DEFAULT_TEXT_BASE_PX, DEFAULT_TEXT_FONT_WEIGHT,
+    DEFAULT_TEXT_LETTER_SPACING_PX, DEFAULT_TEXT_LINE_HEIGHT, DEFAULT_TOP_K_URLS,
+    DEFAULT_UPDATER_CHECK_INTERVAL_HOURS, DEFAULT_UPDATER_MANIFEST_URL, DEFAULT_VOICE_BASE_URL,
+    DEFAULT_VOICE_LANG, DEFAULT_VOICE_MAX_CHUNK_LENGTH, DEFAULT_VOICE_NAME, DEFAULT_VOICE_SPEED,
+    DEFAULT_VOICE_STEPS, SLASH_COMMAND_PROMPT_APPENDIX,
 };
 use super::error::ConfigError;
 use super::schema::AppConfig;
@@ -137,9 +141,11 @@ fn rename_corrupt(path: &Path) {
 /// and composes the system prompt appendix into `prompt.resolved_system`.
 /// After this runs, every `AppConfig` field holds a usable value.
 pub(crate) fn resolve(config: &mut AppConfig) {
-    // Inference section: only the Ollama endpoint is configurable here. The
-    // active model is runtime UI state owned by SQLite app_config, see
-    // crate::models::ActiveModelState.
+    // Inference section.
+    config.inference.provider = match config.inference.provider.trim() {
+        "openrouter" => "openrouter".to_string(),
+        _ => DEFAULT_INFERENCE_PROVIDER.to_string(),
+    };
     if config.inference.ollama_url.trim().is_empty() {
         config.inference.ollama_url = DEFAULT_OLLAMA_URL.to_string();
     }
@@ -156,6 +162,40 @@ pub(crate) fn resolve(config: &mut AppConfig) {
         DEFAULT_NUM_CTX,
         "inference.num_ctx",
     );
+
+    // OpenRouter section. Empty model fields fall back to the initial
+    // preferences; the live model catalog in Settings remains authoritative
+    // for capabilities and pricing.
+    if config.openrouter.base_url.trim().is_empty() {
+        config.openrouter.base_url = DEFAULT_OPENROUTER_BASE_URL.to_string();
+    }
+    if config.openrouter.general_model.trim().is_empty() {
+        config.openrouter.general_model = DEFAULT_OPENROUTER_GENERAL_MODEL.to_string();
+    }
+    if config.openrouter.chat_model.trim().is_empty() {
+        config.openrouter.chat_model = DEFAULT_OPENROUTER_CHAT_MODEL.to_string();
+    }
+    if config.openrouter.vision_model.trim().is_empty() {
+        config.openrouter.vision_model = DEFAULT_OPENROUTER_VISION_MODEL.to_string();
+    }
+    if config.openrouter.reasoning_model.trim().is_empty() {
+        config.openrouter.reasoning_model = DEFAULT_OPENROUTER_REASONING_MODEL.to_string();
+    }
+    if config.openrouter.embedding_model.trim().is_empty() {
+        config.openrouter.embedding_model = DEFAULT_OPENROUTER_EMBEDDING_MODEL.to_string();
+    }
+    if config.openrouter.stt_model.trim().is_empty() {
+        config.openrouter.stt_model = DEFAULT_OPENROUTER_STT_MODEL.to_string();
+    }
+    if config.openrouter.tts_model.trim().is_empty() {
+        config.openrouter.tts_model = DEFAULT_OPENROUTER_TTS_MODEL.to_string();
+    }
+    if config.openrouter.app_title.trim().is_empty() {
+        config.openrouter.app_title = DEFAULT_OPENROUTER_APP_TITLE.to_string();
+    }
+    if config.openrouter.site_url.trim().is_empty() {
+        config.openrouter.site_url = DEFAULT_OPENROUTER_SITE_URL.to_string();
+    }
 
     // Prompt section: if the user has never explicitly saved a system prompt
     // (system_customized is false) and the on-disk value is empty, restore

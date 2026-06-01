@@ -24,6 +24,9 @@ pub struct StudyPackSummary {
     pub item_count: i64,
     pub indexed_count: i64,
     pub needs_index_count: i64,
+    pub chunk_count: i64,
+    pub embedded_count: i64,
+    pub needs_embedding_count: i64,
     pub active: bool,
 }
 
@@ -89,6 +92,14 @@ pub struct StudyPackIndexResponse {
     pub total_items: usize,
     pub indexed_items: usize,
     pub chunks_saved: usize,
+}
+
+#[derive(Serialize)]
+pub struct StudyPackEmbeddingIndexResponse {
+    pub pack_id: String,
+    pub model_id: String,
+    pub total_chunks: usize,
+    pub embedded_chunks: usize,
 }
 
 #[derive(Default, Serialize)]
@@ -379,7 +390,9 @@ fn load_pack(
     conn.query_row(
         "SELECT p.id, p.name, p.authority_source, p.description, p.created_at, p.updated_at,
          (SELECT COUNT(*) FROM study_context_items i WHERE i.pack_id = p.id) AS item_count,
-         (SELECT COUNT(*) FROM study_context_items i WHERE i.pack_id = p.id AND i.indexed_at IS NOT NULL) AS indexed_count \
+         (SELECT COUNT(*) FROM study_context_items i WHERE i.pack_id = p.id AND i.indexed_at IS NOT NULL) AS indexed_count,
+         (SELECT COUNT(*) FROM study_context_chunks c WHERE c.pack_id = p.id) AS chunk_count,
+         (SELECT COUNT(DISTINCT e.chunk_id) FROM study_context_embeddings e WHERE e.pack_id = p.id) AS embedded_count \
          FROM study_packs p \
          WHERE p.id = ?1 \
          GROUP BY p.id",
@@ -388,6 +401,8 @@ fn load_pack(
             let id: String = row.get(0)?;
             let item_count = row.get::<_, i64>(6)?;
             let indexed_count = row.get::<_, i64>(7)?;
+            let chunk_count = row.get::<_, i64>(8)?;
+            let embedded_count = row.get::<_, i64>(9)?;
             Ok(StudyPackSummary {
                 active: active_id == Some(id.as_str()),
                 id,
@@ -399,6 +414,9 @@ fn load_pack(
                 item_count,
                 indexed_count,
                 needs_index_count: (item_count - indexed_count).max(0),
+                chunk_count,
+                embedded_count,
+                needs_embedding_count: (chunk_count - embedded_count).max(0),
             })
         },
     )
@@ -658,11 +676,78 @@ fn score_chunk(query_tokens: &[String], query_lower: &str, text: &str, label: &s
     score
 }
 
+fn cosine_similarity(a: &[f32], b: &[f32]) -> Option<f64> {
+    if a.len() != b.len() || a.is_empty() {
+        return None;
+    }
+    let mut dot = 0.0_f64;
+    let mut a_norm = 0.0_f64;
+    let mut b_norm = 0.0_f64;
+    for (left, right) in a.iter().zip(b.iter()) {
+        let left = *left as f64;
+        let right = *right as f64;
+        dot += left * right;
+        a_norm += left * left;
+        b_norm += right * right;
+    }
+    if a_norm <= f64::EPSILON || b_norm <= f64::EPSILON {
+        return None;
+    }
+    Some(dot / (a_norm.sqrt() * b_norm.sqrt()))
+}
+
+fn embedding_boosts(
+    conn: &rusqlite::Connection,
+    pack_id: &str,
+    model_id: &str,
+    query_embedding: &[f32],
+) -> HashMap<String, f64> {
+    if query_embedding.is_empty() {
+        return HashMap::new();
+    }
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT chunk_id, vector_json \
+         FROM study_context_embeddings \
+         WHERE pack_id = ?1 AND model_id = ?2",
+    ) else {
+        return HashMap::new();
+    };
+    let Ok(rows) = stmt.query_map(params![pack_id, model_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }) else {
+        return HashMap::new();
+    };
+
+    let mut boosts = HashMap::new();
+    for row in rows.flatten() {
+        let Ok(vector) = serde_json::from_str::<Vec<f32>>(&row.1) else {
+            continue;
+        };
+        let Some(similarity) = cosine_similarity(query_embedding, &vector) else {
+            continue;
+        };
+        if similarity.is_finite() && similarity > 0.18 {
+            boosts.insert(row.0, similarity * 40.0);
+        }
+    }
+    boosts
+}
+
 pub fn retrieve_context_for_prompt(
     conn: &rusqlite::Connection,
     pack_id: Option<&str>,
     query: &str,
     limit: usize,
+) -> rusqlite::Result<RetrieveStudyContextResponse> {
+    retrieve_context_for_prompt_with_embedding(conn, pack_id, query, limit, None)
+}
+
+pub fn retrieve_context_for_prompt_with_embedding(
+    conn: &rusqlite::Connection,
+    pack_id: Option<&str>,
+    query: &str,
+    limit: usize,
+    query_embedding: Option<(&str, &[f32])>,
 ) -> rusqlite::Result<RetrieveStudyContextResponse> {
     let active_id = get_active_pack_id(conn)?;
     let Some(target_pack_id) = active_or_requested_pack_id(conn, pack_id)? else {
@@ -721,6 +806,9 @@ pub fn retrieve_context_for_prompt(
             }
         }
     }
+    let vector_boosts = query_embedding
+        .map(|(model_id, vector)| embedding_boosts(conn, &target_pack_id, model_id, vector))
+        .unwrap_or_default();
 
     let mut stmt = conn.prepare(
         "SELECT c.id, c.item_id, c.source_label, c.chunk_text \
@@ -738,6 +826,9 @@ pub fn retrieve_context_for_prompt(
             if let Some(boost) = fts_boosts.get(&id) {
                 score += boost;
             }
+            if let Some(boost) = vector_boosts.get(&id) {
+                score += boost;
+            }
             Ok(RetrievedContextChunk {
                 id,
                 item_id,
@@ -749,7 +840,11 @@ pub fn retrieve_context_for_prompt(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    scored.retain(|chunk| chunk.score > 0.0 || fts_boosts.contains_key(&chunk.id));
+    scored.retain(|chunk| {
+        chunk.score > 0.0
+            || fts_boosts.contains_key(&chunk.id)
+            || vector_boosts.contains_key(&chunk.id)
+    });
     scored.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
@@ -816,7 +911,9 @@ pub fn list_study_packs(db: State<'_, Database>) -> Result<Vec<StudyPackSummary>
         .prepare(
             "SELECT p.id, p.name, p.authority_source, p.description, p.created_at, p.updated_at,
              (SELECT COUNT(*) FROM study_context_items i WHERE i.pack_id = p.id) AS item_count,
-             (SELECT COUNT(*) FROM study_context_items i WHERE i.pack_id = p.id AND i.indexed_at IS NOT NULL) AS indexed_count \
+             (SELECT COUNT(*) FROM study_context_items i WHERE i.pack_id = p.id AND i.indexed_at IS NOT NULL) AS indexed_count,
+             (SELECT COUNT(*) FROM study_context_chunks c WHERE c.pack_id = p.id) AS chunk_count,
+             (SELECT COUNT(DISTINCT e.chunk_id) FROM study_context_embeddings e WHERE e.pack_id = p.id) AS embedded_count \
              FROM study_packs p \
              GROUP BY p.id \
              ORDER BY p.updated_at DESC",
@@ -827,6 +924,8 @@ pub fn list_study_packs(db: State<'_, Database>) -> Result<Vec<StudyPackSummary>
             let id: String = row.get(0)?;
             let item_count = row.get::<_, i64>(6)?;
             let indexed_count = row.get::<_, i64>(7)?;
+            let chunk_count = row.get::<_, i64>(8)?;
+            let embedded_count = row.get::<_, i64>(9)?;
             Ok(StudyPackSummary {
                 active: active_id.as_deref() == Some(id.as_str()),
                 id,
@@ -838,6 +937,9 @@ pub fn list_study_packs(db: State<'_, Database>) -> Result<Vec<StudyPackSummary>
                 item_count,
                 indexed_count,
                 needs_index_count: (item_count - indexed_count).max(0),
+                chunk_count,
+                embedded_count,
+                needs_embedding_count: (chunk_count - embedded_count).max(0),
             })
         })
         .map_err(|e| e.to_string())?
@@ -1029,18 +1131,33 @@ pub fn backfill_study_pack_image_paths(
 
 #[tauri::command]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn retrieve_study_context(
+pub async fn retrieve_study_context(
     pack_id: Option<String>,
     query: String,
     limit: Option<usize>,
+    client: State<'_, reqwest::Client>,
+    config: State<'_, parking_lot::RwLock<crate::config::AppConfig>>,
     db: State<'_, Database>,
 ) -> Result<RetrieveStudyContextResponse, String> {
+    let openrouter = config.read().openrouter.clone();
+    let query_embedding =
+        if !openrouter.api_key.trim().is_empty() && !openrouter.embedding_model.trim().is_empty() {
+            crate::openrouter::embed_texts(&client, &openrouter, std::slice::from_ref(&query))
+                .await
+                .ok()
+                .and_then(|mut vectors| vectors.pop())
+        } else {
+            None
+        };
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    retrieve_context_for_prompt(
+    retrieve_context_for_prompt_with_embedding(
         &conn,
         pack_id.as_deref(),
         &query,
         limit.unwrap_or(RETRIEVAL_LIMIT_DEFAULT),
+        query_embedding
+            .as_deref()
+            .map(|vector| (openrouter.embedding_model.as_str(), vector)),
     )
     .map_err(|e| e.to_string())
 }
@@ -1140,13 +1257,152 @@ pub fn rebuild_study_pack_index(
     })
 }
 
+#[derive(Clone)]
+struct ChunkForEmbedding {
+    id: String,
+    pack_id: String,
+    text: String,
+}
+
+fn load_chunks_missing_embeddings(
+    conn: &rusqlite::Connection,
+    pack_id: &str,
+    model_id: &str,
+) -> Result<Vec<ChunkForEmbedding>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT c.id, c.pack_id, c.chunk_text \
+             FROM study_context_chunks c \
+             WHERE c.pack_id = ?1 \
+               AND NOT EXISTS (
+                 SELECT 1 FROM study_context_embeddings e
+                 WHERE e.chunk_id = c.id AND e.model_id = ?2
+               ) \
+             ORDER BY c.created_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![pack_id, model_id], |row| {
+            Ok(ChunkForEmbedding {
+                id: row.get(0)?,
+                pack_id: row.get(1)?,
+                text: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+fn save_chunk_embeddings(
+    conn: &rusqlite::Connection,
+    chunks: &[ChunkForEmbedding],
+    model_id: &str,
+    vectors: &[Vec<f32>],
+) -> Result<usize, String> {
+    if chunks.len() != vectors.len() {
+        return Err("Embedding vector count does not match chunk count.".to_string());
+    }
+    let now = now_millis();
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    {
+        let mut stmt = tx
+            .prepare(
+                "INSERT INTO study_context_embeddings \
+                 (id, chunk_id, pack_id, model_id, dims, vector_json, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+                 ON CONFLICT(chunk_id, model_id) DO UPDATE SET \
+                   dims = excluded.dims, vector_json = excluded.vector_json, created_at = excluded.created_at",
+            )
+            .map_err(|e| e.to_string())?;
+        for (chunk, vector) in chunks.iter().zip(vectors.iter()) {
+            let vector_json = serde_json::to_string(vector).map_err(|e| e.to_string())?;
+            stmt.execute(params![
+                uuid::Uuid::new_v4().to_string(),
+                chunk.id,
+                chunk.pack_id,
+                model_id,
+                vector.len() as i64,
+                vector_json,
+                now,
+            ])
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(vectors.len())
+}
+
 #[tauri::command]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn check_answer_from_context(
+pub async fn rebuild_study_pack_embeddings(
+    pack_id: Option<String>,
+    client: State<'_, reqwest::Client>,
+    config: State<'_, parking_lot::RwLock<crate::config::AppConfig>>,
+    db: State<'_, Database>,
+) -> Result<StudyPackEmbeddingIndexResponse, String> {
+    let openrouter = config.read().openrouter.clone();
+    if openrouter.api_key.trim().is_empty() {
+        return Err("Add an OpenRouter API key in Settings first.".to_string());
+    }
+    let model_id = openrouter.embedding_model.trim().to_string();
+    if model_id.is_empty() {
+        return Err("Choose an OpenRouter embedding model in Settings.".to_string());
+    }
+
+    let target_id = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let target_id = active_or_requested_pack_id(&conn, pack_id.as_deref())
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Create or select a Study Pack first.".to_string())?;
+        if !pack_exists(&conn, &target_id).map_err(|e| e.to_string())? {
+            return Err("Study Pack not found.".to_string());
+        }
+        target_id
+    };
+
+    let chunks = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        load_chunks_missing_embeddings(&conn, &target_id, &model_id)?
+    };
+    if chunks.is_empty() {
+        return Ok(StudyPackEmbeddingIndexResponse {
+            pack_id: target_id,
+            model_id,
+            total_chunks: 0,
+            embedded_chunks: 0,
+        });
+    }
+
+    let mut embedded_chunks = 0;
+    for batch in chunks.chunks(16) {
+        let inputs = batch
+            .iter()
+            .map(|chunk| chunk.text.clone())
+            .collect::<Vec<_>>();
+        let vectors = crate::openrouter::embed_texts(&client, &openrouter, &inputs).await?;
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        embedded_chunks += save_chunk_embeddings(&conn, batch, &model_id, &vectors)?;
+    }
+
+    Ok(StudyPackEmbeddingIndexResponse {
+        pack_id: target_id,
+        model_id,
+        total_chunks: chunks.len(),
+        embedded_chunks,
+    })
+}
+
+#[tauri::command]
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub async fn check_answer_from_context(
     pack_id: Option<String>,
     current_ocr: String,
     question: String,
     student_answer: Option<String>,
+    client: State<'_, reqwest::Client>,
+    config: State<'_, parking_lot::RwLock<crate::config::AppConfig>>,
     db: State<'_, Database>,
 ) -> Result<ContextPromptResponse, String> {
     let query = format!(
@@ -1155,10 +1411,27 @@ pub fn check_answer_from_context(
         student_answer.as_deref().unwrap_or_default(),
         current_ocr
     );
+    let openrouter = config.read().openrouter.clone();
+    let query_embedding =
+        if !openrouter.api_key.trim().is_empty() && !openrouter.embedding_model.trim().is_empty() {
+            crate::openrouter::embed_texts(&client, &openrouter, std::slice::from_ref(&query))
+                .await
+                .ok()
+                .and_then(|mut vectors| vectors.pop())
+        } else {
+            None
+        };
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let context =
-        retrieve_context_for_prompt(&conn, pack_id.as_deref(), &query, RETRIEVAL_LIMIT_DEFAULT)
-            .map_err(|e| e.to_string())?;
+    let context = retrieve_context_for_prompt_with_embedding(
+        &conn,
+        pack_id.as_deref(),
+        &query,
+        RETRIEVAL_LIMIT_DEFAULT,
+        query_embedding
+            .as_deref()
+            .map(|vector| (openrouter.embedding_model.as_str(), vector)),
+    )
+    .map_err(|e| e.to_string())?;
     let enough_context = !context.chunks.is_empty();
     let prompt = format!(
         "{}\n\n[Current Quiz Screenshot OCR]\n{}\n\n[Student Question]\n{}\n\n[Student Answer If Known]\n{}\n\nYou are a strict answer verifier for a student. Follow this process:\n1. Extract the quiz question, answer options, and the student's selected answer from the current OCR when present.\n2. Compare only against the saved Study Pack evidence above. Treat the saved manual/explanation pages as the authority.\n3. If no saved source directly supports the rule needed to verify the answer, say: \"I can't verify this from the saved Study Pack yet\" and state exactly what page/rule should be saved. Do not use outside knowledge to guess.\n4. If evidence is sufficient, give a clear verdict: Correct, Incorrect, or Not enough context.\n5. Cite source IDs like [SP1] next to every rule you rely on.\n6. Keep the correction in small learning steps and end with one short check question.",
@@ -1273,6 +1546,65 @@ mod tests {
                 .unwrap();
         assert_eq!(result.chunks[0].id, "c1");
         assert!(result.context_block.contains("[SP1]"));
+    }
+
+    #[test]
+    fn retrieve_context_uses_embedding_boosts_when_available() {
+        let conn = database::open_in_memory().unwrap();
+        let now = now_millis();
+        let pack_id = "pack";
+        conn.execute(
+            "INSERT INTO study_packs (id, name, authority_source, description, created_at, updated_at) \
+             VALUES (?1, 'Driver License', 'Italy', NULL, ?2, ?2)",
+            params![pack_id, now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO study_context_items \
+             (id, pack_id, title, source_kind, raw_ocr, created_at) \
+             VALUES ('item1', ?1, 'Road rules', 'screenshot', 'raw', ?2)",
+            params![pack_id, now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO study_context_chunks \
+             (id, item_id, pack_id, chunk_index, chunk_text, source_label, created_at) \
+             VALUES ('c1', 'item1', ?1, 0, 'Completely unrelated parking rule.', 'Parking', ?2)",
+            params![pack_id, now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO study_context_chunks \
+             (id, item_id, pack_id, chunk_index, chunk_text, source_label, created_at) \
+             VALUES ('c2', 'item1', ?1, 1, 'A tram lane priority rule.', 'Trams', ?2)",
+            params![pack_id, now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO study_context_embeddings \
+             (id, chunk_id, pack_id, model_id, dims, vector_json, created_at) \
+             VALUES ('e1', 'c1', ?1, 'embed/model', 2, '[1.0,0.0]', ?2)",
+            params![pack_id, now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO study_context_embeddings \
+             (id, chunk_id, pack_id, model_id, dims, vector_json, created_at) \
+             VALUES ('e2', 'c2', ?1, 'embed/model', 2, '[0.0,1.0]', ?2)",
+            params![pack_id, now],
+        )
+        .unwrap();
+
+        let query_embedding = vec![0.0_f32, 1.0_f32];
+        let result = retrieve_context_for_prompt_with_embedding(
+            &conn,
+            Some(pack_id),
+            "unknown topic",
+            2,
+            Some(("embed/model", &query_embedding)),
+        )
+        .unwrap();
+        assert_eq!(result.chunks[0].id, "c2");
     }
 
     #[test]

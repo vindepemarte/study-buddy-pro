@@ -30,7 +30,22 @@ const CONFIG_UPDATED_EVENT = 'thuki://config-updated';
 /** Shape returned by the Rust `get_config` command (snake_case). */
 interface RawAppConfig {
   inference: {
+    provider?: string;
     ollama_url: string;
+  };
+  openrouter?: {
+    api_key: string;
+    base_url: string;
+    use_general_model: boolean;
+    general_model: string;
+    chat_model: string;
+    vision_model: string;
+    reasoning_model: string;
+    embedding_model: string;
+    stt_model: string;
+    tts_model: string;
+    app_title: string;
+    site_url: string;
   };
   prompt: {
     system: string;
@@ -64,7 +79,20 @@ interface RawAppConfig {
 /** Camel-cased, frontend-friendly view of the configuration. */
 export interface AppConfig {
   inference: {
+    provider: string;
     ollamaUrl: string;
+  };
+  openrouter: {
+    configured: boolean;
+    baseUrl: string;
+    useGeneralModel: boolean;
+    generalModel: string;
+    chatModel: string;
+    visionModel: string;
+    reasoningModel: string;
+    embeddingModel: string;
+    sttModel: string;
+    ttsModel: string;
   };
   prompt: {
     /** Raw user-editable persona prompt (may be empty). */
@@ -99,7 +127,23 @@ export interface AppConfig {
 function transform(raw: RawAppConfig): AppConfig {
   return {
     inference: {
+      provider: raw.inference.provider ?? 'ollama',
       ollamaUrl: raw.inference.ollama_url,
+    },
+    openrouter: {
+      configured: Boolean(raw.openrouter?.api_key?.trim()),
+      baseUrl: raw.openrouter?.base_url ?? 'https://openrouter.ai/api/v1',
+      useGeneralModel: raw.openrouter?.use_general_model ?? true,
+      generalModel: raw.openrouter?.general_model ?? 'qwen/qwen3.5-flash-02-23',
+      chatModel: raw.openrouter?.chat_model ?? 'qwen/qwen3.5-flash-02-23',
+      visionModel: raw.openrouter?.vision_model ?? 'qwen/qwen3.5-flash-02-23',
+      reasoningModel:
+        raw.openrouter?.reasoning_model ?? 'qwen/qwen3.5-flash-02-23',
+      embeddingModel:
+        raw.openrouter?.embedding_model ?? 'qwen/qwen3-embedding-8b',
+      sttModel: raw.openrouter?.stt_model ?? 'openai/whisper-large-v3',
+      ttsModel:
+        raw.openrouter?.tts_model ?? 'openai/gpt-4o-mini-tts-2025-12-15',
     },
     prompt: {
       system: raw.prompt.system,
@@ -239,7 +283,20 @@ export function ConfigProviderForTest({
  */
 export const DEFAULT_CONFIG: AppConfig = {
   inference: {
+    provider: 'ollama',
     ollamaUrl: 'http://127.0.0.1:11434',
+  },
+  openrouter: {
+    configured: false,
+    baseUrl: 'https://openrouter.ai/api/v1',
+    useGeneralModel: true,
+    generalModel: 'qwen/qwen3.5-flash-02-23',
+    chatModel: 'qwen/qwen3.5-flash-02-23',
+    visionModel: 'qwen/qwen3.5-flash-02-23',
+    reasoningModel: 'qwen/qwen3.5-flash-02-23',
+    embeddingModel: 'qwen/qwen3-embedding-8b',
+    sttModel: 'openai/whisper-large-v3',
+    ttsModel: 'openai/gpt-4o-mini-tts-2025-12-15',
   },
   prompt: { system: '' },
   window: {

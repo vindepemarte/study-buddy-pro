@@ -254,6 +254,11 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
         "  pack_id TEXT NOT NULL REFERENCES study_packs(id) ON DELETE CASCADE,",
         "  chunk_index INTEGER NOT NULL, chunk_text TEXT NOT NULL, source_label TEXT NOT NULL,",
         "  created_at INTEGER NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS study_context_embeddings (",
+        "  id TEXT PRIMARY KEY, chunk_id TEXT NOT NULL REFERENCES study_context_chunks(id) ON DELETE CASCADE,",
+        "  pack_id TEXT NOT NULL REFERENCES study_packs(id) ON DELETE CASCADE,",
+        "  model_id TEXT NOT NULL, dims INTEGER NOT NULL, vector_json TEXT NOT NULL,",
+        "  created_at INTEGER NOT NULL, UNIQUE(chunk_id, model_id));",
         "CREATE TABLE IF NOT EXISTS study_pack_conversations (",
         "  pack_id TEXT NOT NULL REFERENCES study_packs(id) ON DELETE CASCADE,",
         "  conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL,",
@@ -264,6 +269,8 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
         "  ON study_context_items(pack_id, created_at DESC);",
         "CREATE INDEX IF NOT EXISTS idx_study_context_chunks_pack",
         "  ON study_context_chunks(pack_id, created_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_study_context_embeddings_pack_model",
+        "  ON study_context_embeddings(pack_id, model_id);",
     );
     conn.execute_batch(SCHEMA_DDL)?;
     // Study Pack indexing metadata added after the initial Study Pack schema.

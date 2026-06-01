@@ -10,6 +10,9 @@ export interface StudyPackSummary {
   item_count: number;
   indexed_count: number;
   needs_index_count: number;
+  chunk_count: number;
+  embedded_count: number;
+  needs_embedding_count: number;
   active: boolean;
 }
 
@@ -75,4 +78,11 @@ export interface StudyPackIndexResponse {
   total_items: number;
   indexed_items: number;
   chunks_saved: number;
+}
+
+export interface StudyPackEmbeddingIndexResponse {
+  pack_id: string;
+  model_id: string;
+  total_chunks: number;
+  embedded_chunks: number;
 }

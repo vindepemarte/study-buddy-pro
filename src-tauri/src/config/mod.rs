@@ -26,7 +26,8 @@ pub mod writer;
 pub use error::ConfigError;
 pub use loader::load_from_path;
 pub use schema::{
-    AppConfig, InferenceSection, PromptSection, QuoteSection, VoiceSection, WindowSection,
+    AppConfig, InferenceSection, OpenRouterSection, PromptSection, QuoteSection, VoiceSection,
+    WindowSection,
 };
 pub use writer::{atomic_write, atomic_write_bytes};
 

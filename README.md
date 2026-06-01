@@ -1,12 +1,13 @@
 # Study Buddy Pro
 
-Study Buddy Pro is a local-first desktop tutor forked from Thuki. It keeps the floating overlay, screenshot context, local Ollama chat, and local search pipeline, then adds a study-buddy direction: guided explanations, adaptive quizzes, vocabulary mastery, learner memory, and Supertonic text-to-speech.
+Study Buddy Pro is a local-first desktop tutor forked from Thuki. It keeps the floating overlay, screenshot context, optional local Ollama chat, and local search pipeline, then adds a study-buddy direction: guided explanations, adaptive quizzes, vocabulary mastery, learner memory, OpenRouter API routing, semantic Study Pack search, and Supertonic text-to-speech.
 
 The goal is not to complete homework for a student. The app should help the student understand the material, identify gaps, explain difficult words, ask for original examples, quiz one step at a time, and adapt from mistakes.
 
 ## What Is Implemented
 
-- Local Ollama chat with Thuki's existing floating overlay workflow.
+- OpenRouter chat provider with Settings-based API key, model catalog, capability filters, and rough input/output pricing summaries.
+- Optional local Ollama chat with Thuki's existing floating overlay workflow.
 - Screenshot and image context through the existing capture/OCR paths.
 - Study commands: `/study`, `/quiz`, and `/vocab`.
 - Natural study routing for phrases like "I can't understand this".
@@ -15,11 +16,19 @@ The goal is not to complete homework for a student. The app should help the stud
 - Startup voice launch attempt when voice is enabled. Packaged builds copy the bundled Supertonic manager into the app-local data directory before starting it.
 - Windows beta support for `Ctrl+Space`, screen capture, Supertonic startup, and OCR through local Ollama vision model `gemma4:e2b`.
 - Optional Apple Silicon MLX Vision enrichment for Study Packs. `/remember` can combine Apple Vision OCR with local MLX-VLM structured page notes before indexing saved screenshots.
+- Local Study Pack semantic embeddings. Saved screenshot chunks stay in SQLite; when OpenRouter is configured, embeddings are generated through the selected embedding model and stored locally for hybrid FTS + vector retrieval.
 - Setup readiness command for Ollama, Windows OCR model, Python, optional MLX Vision, voice, Docker, SearXNG, and reader status. Docker search is optional.
 
 ## Local Runtime
 
-Required for core chat:
+Required for API-first chat:
+
+1. Open Settings.
+2. Set `Inference provider` to `openrouter`.
+3. Add your OpenRouter API key.
+4. Click `Refresh models` and choose chat, vision, embedding, speech-to-text, and text-to-speech models.
+
+Optional for fully local chat:
 
 ```bash
 ollama serve

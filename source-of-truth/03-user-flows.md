@@ -34,7 +34,7 @@ Saved pages are OCRed locally, optionally enriched with MLX Vision structured no
 
 When MLX Vision is available but not installed, the Study Pack surface offers an explicit enable action. OCR-only saving remains available if the MLX runtime is absent, installing, or fails.
 
-Existing saved pages with older chunking are automatically re-indexed in the background when their Study Pack becomes active. The ask surface shows indexed-page progress so the student can tell when the pack is ready for grounded checks.
+Existing saved pages with older chunking are automatically re-indexed in the background when their Study Pack becomes active. When OpenRouter is configured, missing chunk embeddings are generated in the background as well. The ask surface shows indexed and embedded progress so the student can tell when the pack is ready for grounded checks.
 
 Students may attach multiple screenshots to one `/remember` message to save several manual pages at once. PDF/manual import is planned as a later bulk-ingestion surface; until then, photographed or screenshot pages are the supported local source format.
 

@@ -25,6 +25,7 @@ pub mod mlx_vlm;
 pub mod models;
 pub mod ocr;
 pub mod onboarding;
+pub mod openrouter;
 pub mod screenshot;
 pub mod search;
 pub mod settings_commands;
@@ -1978,11 +1979,13 @@ pub fn run() {
             study_context::backfill_study_pack_image_paths,
             study_context::retrieve_study_context,
             study_context::rebuild_study_pack_index,
+            study_context::rebuild_study_pack_embeddings,
             study_context::check_answer_from_context,
             study_context::get_study_pack_summary,
             mlx_vlm::mlx_vlm_status,
             mlx_vlm::mlx_vlm_install,
             mlx_vlm::mlx_vlm_describe_images,
+            openrouter::openrouter_list_models,
             setup::get_setup_readiness,
             setup::start_search_services,
             setup::stop_search_services

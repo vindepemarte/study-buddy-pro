@@ -13,12 +13,38 @@
 
 const HELPERS = {
   inference: {
+    provider:
+      'Choose whether Study Buddy Pro uses local Ollama or OpenRouter API calls for normal chat. Ollama keeps everything local. OpenRouter sends prompts, images, and selected context to the API while memory and Study Packs stay in your local database.',
     ollama_url:
       'The web address where Study Buddy Pro finds your local Ollama server. The default works if you run Ollama on this machine with its standard port. Change this only if you moved Ollama to a different port or another machine.',
     keep_warm:
       'When on, Study Buddy Pro tells Ollama to keep the active model loaded in GPU memory between conversations, saving the cold-load wait on every open. Set "Release after" to −1 to keep it warm indefinitely, or pick a timeout in minutes so GPU memory is reclaimed when you stop using Study Buddy Pro for a while.',
     num_ctx:
       "The size of the context window sent to Ollama with every request, in tokens. This value must match between warmup and chat so Ollama can reuse the same runner and its cached key-value prefix for the system prompt. Raise to fit longer conversations without the model forgetting early messages; lower to reduce GPU memory use. Ollama caps the effective value at the model's trained maximum, so anything beyond that is silently clamped, not used. Valid range: 2048–1048576. The default (16384) comfortably fits the system prompt plus several long turns.",
+  },
+  openrouter: {
+    api_key:
+      'Your OpenRouter API key. It is stored only in your local config file and sent as the Authorization header when OpenRouter is selected.',
+    base_url:
+      'OpenRouter API base URL. Keep the default unless OpenRouter changes its endpoint or you are using a compatible gateway.',
+    use_general_model:
+      'When enabled, Study Buddy Pro uses the general model for chat, vision, and reasoning. Turn it off to choose separate models for each job.',
+    general_model:
+      'Default OpenRouter model used when one model should handle all tasks. Pick a multimodal model if you want direct screenshot chat.',
+    chat_model:
+      'Text chat model used for normal conversation when separate model routing is enabled.',
+    vision_model:
+      'Vision-capable model used when a chat turn includes screenshots or image attachments.',
+    reasoning_model:
+      'Reasoning model reserved for deeper checks, search planning, and future verifier passes.',
+    embedding_model:
+      'Embedding model used for local semantic memory. The vectors are stored locally; only the text being embedded is sent to OpenRouter.',
+    stt_model:
+      'Speech-to-text model used for future microphone/audio transcription through OpenRouter.',
+    tts_model:
+      'Text-to-speech model used for future API voice output when you choose API speech instead of local Supertonic.',
+    app_title: 'Optional app title sent to OpenRouter for request attribution.',
+    site_url: 'Optional site URL sent to OpenRouter for request attribution.',
   },
   prompt: {
     system:

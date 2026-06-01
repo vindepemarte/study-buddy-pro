@@ -14,9 +14,24 @@
 
 export interface RawAppConfig {
   inference: {
+    provider?: string;
     ollama_url: string;
     keep_warm_inactivity_minutes: number;
     num_ctx: number;
+  };
+  openrouter?: {
+    api_key: string;
+    base_url: string;
+    use_general_model: boolean;
+    general_model: string;
+    chat_model: string;
+    vision_model: string;
+    reasoning_model: string;
+    embedding_model: string;
+    stt_model: string;
+    tts_model: string;
+    app_title: string;
+    site_url: string;
   };
   prompt: {
     system: string;

@@ -2,7 +2,7 @@
 
 Status: active
 
-- Python embedding is deferred. Windows beta guides users to install Python 3.11/3.12, then the app-managed Supertonic runtime creates its own venv.
+- Local Python embedding runtime is deferred. OpenRouter embeddings are supported first and stored locally in SQLite.
 - Code signing is deferred. Windows beta uses unsigned NSIS; public release needs a signing certificate.
 - Bulk PDF/manual import is deferred; current Study Pack ingestion supports `/screen /remember` and multiple attached screenshots.
 

@@ -554,23 +554,31 @@ pub async fn ask_ollama(
     // Snapshot the config once so all downstream reads (endpoint, prompt, model)
     // see a consistent view even if the user edits Settings mid-stream.
     let config = config.read().clone();
+    let provider = config.inference.provider.trim().to_string();
+    let use_openrouter = provider == "openrouter";
+    let has_images = image_paths.as_ref().is_some_and(|paths| !paths.is_empty());
     let endpoint = format!(
         "{}/api/chat",
         config.inference.ollama_url.trim_end_matches('/')
     );
     // Snapshot the active model slug; drop the guard before any `.await`.
-    let model_name = {
-        let guard = active_model.0.lock().map_err(|e| e.to_string())?;
-        guard.clone()
-    };
-    let Some(model_name) = model_name else {
-        // Defense in depth: the onboarding gate already refuses to open the
-        // overlay without a selected model, so this branch only fires if the
-        // user removed their last installed model with `ollama rm` between
-        // launches and the picker hasn't been opened yet. Surface a typed
-        // error so the frontend can route the user to the picker.
-        let _ = on_event.send(StreamChunk::Error(no_model_selected_error()));
-        return Ok(());
+    let model_name = if use_openrouter {
+        crate::openrouter::selected_chat_model(&config.openrouter, has_images)
+    } else {
+        let model_name = {
+            let guard = active_model.0.lock().map_err(|e| e.to_string())?;
+            guard.clone()
+        };
+        let Some(model_name) = model_name else {
+            // Defense in depth: the onboarding gate already refuses to open the
+            // overlay without a selected model, so this branch only fires if the
+            // user removed their last installed model with `ollama rm` between
+            // launches and the picker hasn't been opened yet. Surface a typed
+            // error so the frontend can route the user to the picker.
+            let _ = on_event.send(StreamChunk::Error(no_model_selected_error()));
+            return Ok(());
+        };
+        model_name
     };
     let cancel_token = CancellationToken::new();
     generation.set_token(cancel_token.clone());
@@ -618,13 +626,38 @@ pub async fn ask_ollama(
         .map(str::trim)
         .is_some_and(|id| !id.is_empty())
     {
+        let query_embedding = if use_openrouter
+            && !config.openrouter.api_key.trim().is_empty()
+            && !config.openrouter.embedding_model.trim().is_empty()
+        {
+            crate::openrouter::embed_texts(
+                &client,
+                &config.openrouter,
+                std::slice::from_ref(&content),
+            )
+            .await
+            .ok()
+            .and_then(|mut vectors| vectors.pop())
+        } else {
+            None
+        };
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        content = crate::study_context::inject_context_into_prompt(
+        let retrieved = crate::study_context::retrieve_context_for_prompt_with_embedding(
             &conn,
             study_pack_id.as_deref(),
             &content,
+            10,
+            query_embedding
+                .as_deref()
+                .map(|vector| (config.openrouter.embedding_model.as_str(), vector)),
         )
         .map_err(|e| e.to_string())?;
+        if !retrieved.context_block.trim().is_empty() {
+            content = format!(
+                "{}\n\n[Student Request]\n{}",
+                retrieved.context_block, content
+            );
+        }
     }
 
     // Emit UserMessage before any image base64 work, so the trace
@@ -672,24 +705,26 @@ pub async fn ask_ollama(
     // stored history (`conv`) is never mutated. On a cache miss we leave
     // the payload untouched and trust Ollama to surface a structured error
     // through `classify_http_error`'s picker hint, which the user can act on.
-    let cache_hit = capabilities_cache
-        .0
-        .lock()
-        .ok()
-        .and_then(|guard| guard.get(&model_name).cloned());
-    if let Some(caps) = cache_hit {
-        let stats = apply_capability_filter(&mut messages, &caps);
-        if stats.stripped_images > 0 {
+    if !use_openrouter {
+        let cache_hit = capabilities_cache
+            .0
+            .lock()
+            .ok()
+            .and_then(|guard| guard.get(&model_name).cloned());
+        if let Some(caps) = cache_hit {
+            let stats = apply_capability_filter(&mut messages, &caps);
+            if stats.stripped_images > 0 {
+                eprintln!(
+                    "thuki: [capability filter] model={} stripped_images={}",
+                    model_name, stats.stripped_images
+                );
+            }
+        } else {
             eprintln!(
-                "thuki: [capability filter] model={} stripped_images={}",
-                model_name, stats.stripped_images
+                "thuki: [capability filter] cache miss for model={}, sending payload as-is",
+                model_name
             );
         }
-    } else {
-        eprintln!(
-            "thuki: [capability filter] cache miss for model={}, sending payload as-is",
-            model_name
-        );
     }
 
     let keep_alive = if config.inference.keep_warm_inactivity_minutes == 0 {
@@ -708,27 +743,47 @@ pub async fn ask_ollama(
     let token_count_for_pump = std::sync::Arc::clone(&token_count_atomic);
     let recorder_for_pump = std::sync::Arc::clone(&bound_recorder);
 
-    let accumulated = stream_ollama_chat(
-        OllamaChatParams {
-            endpoint,
-            model: model_name,
-            messages,
-            think,
-            keep_alive,
-            num_ctx: config.inference.num_ctx,
-        },
-        &client,
-        cancel_token.clone(),
-        |chunk| {
-            // Mirror the user-visible chunk into the trace before
-            // forwarding it to the frontend. Token / ThinkingToken
-            // chunks land as discrete trace events; terminal chunks are
-            // summarized below by `AssistantComplete`.
-            record_chunk_to_trace(&chunk, &recorder_for_pump, &token_count_for_pump);
-            let _ = on_event.send(chunk);
-        },
-    )
-    .await;
+    let accumulated = if use_openrouter {
+        crate::openrouter::stream_openrouter_chat(
+            crate::openrouter::OpenRouterChatParams {
+                base_url: config.openrouter.base_url.clone(),
+                api_key: config.openrouter.api_key.clone(),
+                app_title: config.openrouter.app_title.clone(),
+                site_url: config.openrouter.site_url.clone(),
+                model: model_name,
+                messages,
+            },
+            &client,
+            cancel_token.clone(),
+            |chunk| {
+                record_chunk_to_trace(&chunk, &recorder_for_pump, &token_count_for_pump);
+                let _ = on_event.send(chunk);
+            },
+        )
+        .await
+    } else {
+        stream_ollama_chat(
+            OllamaChatParams {
+                endpoint,
+                model: model_name,
+                messages,
+                think,
+                keep_alive,
+                num_ctx: config.inference.num_ctx,
+            },
+            &client,
+            cancel_token.clone(),
+            |chunk| {
+                // Mirror the user-visible chunk into the trace before
+                // forwarding it to the frontend. Token / ThinkingToken
+                // chunks land as discrete trace events; terminal chunks are
+                // summarized below by `AssistantComplete`.
+                record_chunk_to_trace(&chunk, &recorder_for_pump, &token_count_for_pump);
+                let _ = on_event.send(chunk);
+            },
+        )
+        .await
+    };
 
     let stream_ended_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

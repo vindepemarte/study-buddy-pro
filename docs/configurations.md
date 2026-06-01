@@ -27,6 +27,8 @@ open ~/Library/Application\ Support/com.quietnode.thuki/config.toml
 
 ```toml
 [inference]
+# "openrouter" uses the API-first provider. "ollama" keeps chat local.
+provider = "ollama"
 # Where Thuki finds your local Ollama server. The active model itself is
 # selected from the in-app picker (which lists whatever is installed in
 # Ollama via /api/tags) and is stored in Thuki's local database, not here.
@@ -40,6 +42,20 @@ keep_warm_inactivity_minutes = 0
 # cached KV prefix for the system prompt. Raise to fit longer conversations;
 # lower to reduce GPU memory use. Valid range: 2048–1048576.
 num_ctx = 16384
+
+[openrouter]
+api_key = ""
+base_url = "https://openrouter.ai/api/v1"
+use_general_model = true
+general_model = "qwen/qwen3.5-flash-02-23"
+chat_model = "qwen/qwen3.5-flash-02-23"
+vision_model = "qwen/qwen3.5-flash-02-23"
+reasoning_model = "qwen/qwen3.5-flash-02-23"
+embedding_model = "qwen/qwen3-embedding-8b"
+stt_model = "openai/whisper-large-v3"
+tts_model = "openai/gpt-4o-mini-tts-2025-12-15"
+app_title = "Study Buddy Pro"
+site_url = "https://github.com/vindepemarte/study-buddy-pro"
 
 [prompt]
 # The full secretary persona prompt. Seeded on first run so this file is the
@@ -107,12 +123,15 @@ Every domain below is shown as a single table that lists **all** constants Thuki
 
 ### `[inference]`
 
-Where to find your local Ollama server. The active model itself is **not** a TOML setting: Thuki discovers installed models live from Ollama's `/api/tags` endpoint, lets you pick one from the in-app model picker, and stores that selection in its local SQLite database (`app_config` table). Storing the active slug in TOML would duplicate ground truth from Ollama and break the moment you remove a model with `ollama rm`, so it lives next to the conversation history instead.
+Selects the normal chat provider and keeps the local Ollama knobs available. `provider = "openrouter"` sends chat, direct screenshot/image turns, embeddings, and future speech API work through OpenRouter. `provider = "ollama"` keeps normal chat local. In both modes, conversation history, Study Packs, OCR text, screenshots copied into app data, and embedding vectors remain in the local SQLite/app-data store.
+
+For Ollama, the active model itself is **not** a TOML setting: Thuki discovers installed models live from Ollama's `/api/tags` endpoint, lets you pick one from the in-app model picker, and stores that selection in its local SQLite database (`app_config` table). Storing the active slug in TOML would duplicate ground truth from Ollama and break the moment you remove a model with `ollama rm`, so it lives next to the conversation history instead.
 
 When no model is installed and no choice has been persisted, Thuki refuses to dispatch a chat request and surfaces a "Pick a model" prompt in the input area. Pull a model with `ollama pull <slug>` and select it from the picker chip in the top-right of the overlay.
 
 | Constant     | Default                    | Tunable? | Why not tunable | Bounds        | Description                                                                                                                                                                                                          |
 | :----------- | :------------------------- | :------- | :-------------- | :------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider` | `"ollama"` | Yes | — | `"ollama"` or `"openrouter"` | Chooses the inference provider for normal chat. OpenRouter uses API calls and Settings-selected models. Ollama uses the local daemon and model picker. |
 | `ollama_url` | `"http://127.0.0.1:11434"` | Yes      | —               | non-empty URL | The web address where Thuki finds your local Ollama server. The default works if you run Ollama on this machine with its standard port. Change this only if you moved Ollama to a different port or another machine. |
 | `keep_warm_inactivity_minutes` | `0` | Yes | — | `-1` or `[0, 1440]` | Minutes of inactivity before Thuki tells Ollama to release the model from VRAM. `0` means do not manage: Ollama's own 5-minute default applies. `-1` means never release (stays until Ollama exits or you unload manually). Raise for longer sessions between uses; lower to reclaim VRAM sooner. |
 | `num_ctx` | `16384` | Yes | — | `[2048, 1048576]` | Context window size in tokens sent to Ollama with every request. Warmup and chat share this value so Ollama reuses the same runner instance and its cached KV prefix for the system prompt: they must match or Ollama creates a second runner and the warmup saves nothing. Ollama silently clamps this to the model's physical maximum, so values above the model's capacity are accepted but have no extra effect. Raise to fit longer conversations without the model forgetting early messages: each doubling roughly doubles VRAM for the KV cache; lower to reclaim GPU memory at the cost of a shorter effective history. 16384 is the default because it comfortably holds the full system prompt (~4000 tokens) plus many turns while staying within 8 GB GPU budgets. See [Tuning the Context Window](./tuning-context-window.md) for a 5-minute benchmark recipe to find the right value for your hardware. |
@@ -129,6 +148,25 @@ The table below also lists the baked-in safety limits that govern Thuki's commun
 | `MAX_OLLAMA_SHOW_BODY_BYTES`                | `4 MiB`  | No       | Defense-in-depth bound on attacker-controlled response body. Same rationale as `MAX_OLLAMA_TAGS_BODY_BYTES`.                                                            | —      | The largest `/api/show` response body Thuki will accept. Full Modelfiles and parameters can be sizable, but 4 MiB is well above any real model; larger responses are rejected.      |
 | `MAX_MODEL_SLUG_LEN`                        | `256 B`  | No       | Defense-in-depth bound on adversarial input. Real Ollama slugs are a handful of characters; capping the length stops malformed values long before any network or DB work. | —      | The longest model slug Thuki will accept from `set_active_model`. Anything longer is rejected immediately by `validate_model_slug`.                                                  |
 | `VRAM_POLL_INTERVAL_SECS`                   | `5 s`    | No       | Tuning this trades responsiveness against localhost polling load; 5 s is the sweet spot for loopback calls and matches Ollama's internal TTL resolution granularity. | —      | How often Thuki polls Ollama's `/api/ps` to detect VRAM changes made outside Thuki (for example, running `ollama stop` or a TTL expiry). The Settings panel VRAM indicator reflects these changes within one interval. |
+
+### `[openrouter]`
+
+OpenRouter settings are used when `[inference].provider = "openrouter"`. The Settings panel calls the OpenRouter model catalog, shows capability metadata from each model's input/output modalities, and shows rough input/output dollars per million tokens for the selected stack. Study Buddy Pro stores the API key only in local config. Saved Study Pack memory and embedding vectors remain local, but the text being embedded or sent to the chat model is sent to OpenRouter.
+
+| Constant | Default | Tunable? | Why not tunable | Bounds | Description |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| `api_key` | `""` | Yes | — | any string | OpenRouter API key used as the bearer token. Required when OpenRouter is selected. |
+| `base_url` | `"https://openrouter.ai/api/v1"` | Yes | — | non-empty URL | OpenRouter-compatible API base URL. Keep the default unless using a compatible gateway. |
+| `use_general_model` | `true` | Yes | — | boolean | When true, one model handles text, vision, and reasoning turns. Choose a model with `image` input if you want direct screenshot chat. |
+| `general_model` | `"qwen/qwen3.5-flash-02-23"` | Yes | — | model id | General chat model used when `use_general_model` is true. |
+| `chat_model` | `"qwen/qwen3.5-flash-02-23"` | Yes | — | model id | Text-only chat model used when separate routing is enabled. |
+| `vision_model` | `"qwen/qwen3.5-flash-02-23"` | Yes | — | model id with image input | Model used for normal chat turns that include screenshots or image attachments when separate routing is enabled. |
+| `reasoning_model` | `"qwen/qwen3.5-flash-02-23"` | Yes | — | model id | Reserved reasoning/verifier model for deeper checks and future planner passes. |
+| `embedding_model` | `"qwen/qwen3-embedding-8b"` | Yes | — | model id with embeddings output | Model used to embed Study Pack chunks and queries. Vectors are stored in local SQLite. |
+| `stt_model` | `"openai/whisper-large-v3"` | Yes | — | model id with audio input and text output | Speech-to-text model selection for future API audio input. |
+| `tts_model` | `"openai/gpt-4o-mini-tts-2025-12-15"` | Yes | — | model id with audio output | Text-to-speech model selection for future API voice output. Local Supertonic remains available. |
+| `app_title` | `"Study Buddy Pro"` | Yes | — | any string | Optional title sent to OpenRouter for request attribution. |
+| `site_url` | GitHub repo URL | Yes | — | URL or empty | Optional referer URL sent to OpenRouter for request attribution. |
 
 ### `[prompt]`
 

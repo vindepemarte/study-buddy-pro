@@ -54,6 +54,7 @@ import type {
   MlxVlmInstallResult,
   MlxVlmStatus,
   SaveContextResponse,
+  StudyPackEmbeddingIndexResponse,
   StudyPackIndexResponse,
   StudyPackSummary,
 } from './types/studyPack';
@@ -482,6 +483,12 @@ function App() {
 
   const config = useConfig();
   const quote = config.quote;
+  const isOpenRouterProvider = config.inference.provider === 'openrouter';
+  const activeRuntimeModel = isOpenRouterProvider
+    ? config.openrouter.useGeneralModel
+      ? config.openrouter.generalModel
+      : config.openrouter.chatModel
+    : activeModel;
   const voiceStartRequestedRef = useRef(false);
 
   useEffect(() => {
@@ -513,10 +520,12 @@ function App() {
   const [studyPackName, setStudyPackName] = useState('');
   const [studyPackAuthority, setStudyPackAuthority] = useState('');
   const [indexingPackId, setIndexingPackId] = useState<string | null>(null);
+  const [embeddingPackId, setEmbeddingPackId] = useState<string | null>(null);
   const [mlxVlmStatus, setMlxVlmStatus] = useState<MlxVlmStatus | null>(null);
   const [mlxVlmBusy, setMlxVlmBusy] = useState(false);
   const [mlxVlmMessage, setMlxVlmMessage] = useState<string | null>(null);
   const autoIndexedPacksRef = useRef<Set<string>>(new Set());
+  const autoEmbeddedPacksRef = useRef<Set<string>>(new Set());
   const studyPackImageBackfillRef = useRef(false);
 
   const refreshMlxVlmStatus = useCallback(async () => {
@@ -615,7 +624,11 @@ function App() {
     loadMessages,
     getTraceConversationId,
     addOcrTurn,
-  } = useOllama(activeModel, handleTurnComplete, activeStudyPack?.id ?? null);
+  } = useOllama(
+    activeRuntimeModel,
+    handleTurnComplete,
+    activeStudyPack?.id ?? null,
+  );
 
   /**
    * Mirror of `messages` as a ref so export handlers (and any future
@@ -727,6 +740,60 @@ function App() {
       window.clearTimeout(timer);
     };
   }, [activeStudyPack, refreshStudyPacks]);
+
+  useEffect(() => {
+    const pack = activeStudyPack;
+    if (!pack || pack.needs_embedding_count <= 0) return;
+    if (!isOpenRouterProvider || !config.openrouter.configured) return;
+    const key = `${pack.id}:${config.openrouter.embeddingModel}:${pack.chunk_count}:${pack.embedded_count}`;
+    if (autoEmbeddedPacksRef.current.has(key)) return;
+    autoEmbeddedPacksRef.current.add(key);
+
+    let cancelled = false;
+    const runEmbeddingIndex = async () => {
+      setEmbeddingPackId(pack.id);
+      setStudyPackStatus(
+        `Embedding ${pack.needs_embedding_count} context chunk(s)...`,
+      );
+      try {
+        const result = await invoke<StudyPackEmbeddingIndexResponse>(
+          'rebuild_study_pack_embeddings',
+          {
+            packId: pack.id,
+          },
+        );
+        if (cancelled) return;
+        setStudyPackStatus(
+          `Semantic index ready: ${result.embedded_chunks}/${result.total_chunks} chunk${
+            result.total_chunks === 1 ? '' : 's'
+          }`,
+        );
+        void refreshStudyPacks();
+      } catch (err) {
+        if (cancelled) return;
+        autoEmbeddedPacksRef.current.delete(key);
+        setCaptureError(
+          `Could not embed Study Pack: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      } finally {
+        if (!cancelled) setEmbeddingPackId(null);
+      }
+    };
+
+    const timer = window.setTimeout(() => void runEmbeddingIndex(), 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    activeStudyPack,
+    isOpenRouterProvider,
+    config.openrouter.configured,
+    config.openrouter.embeddingModel,
+    refreshStudyPacks,
+  ]);
   /**
    * Set to true when a /screen capture is dispatched, false when it resolves
    * or when the user cancels. Lets the async tail in handleScreenSubmit
@@ -1718,12 +1785,12 @@ function App() {
         // `save` accepts `string | null` and short-circuits internally when
         // there is no active model, so the no-model guard lives in one
         // place rather than duplicated at every call site.
-        await save(messages, activeModel);
+        await save(messages, activeRuntimeModel);
       }
     } catch {
       // State stays unchanged on failure; feedback is implicit in the icon.
     }
-  }, [isSaved, unsave, save, messages, activeModel]);
+  }, [isSaved, unsave, save, messages, activeRuntimeModel]);
 
   /**
    * Loads a conversation from history, replacing the current session.
@@ -1760,7 +1827,7 @@ function App() {
   const handleSaveAndLoad = useCallback(
     async (id: string) => {
       try {
-        await save(messages, activeModel);
+        await save(messages, activeRuntimeModel);
       } catch {
         // Save failed - abort to avoid leaving the current session unprotected.
         return;
@@ -1776,7 +1843,7 @@ function App() {
         setIsExportOpen(false);
       }
     },
-    [save, messages, loadConversation, loadMessages, activeModel],
+    [save, messages, loadConversation, loadMessages, activeRuntimeModel],
   );
 
   /**
@@ -1841,12 +1908,12 @@ function App() {
   /** Saves the current conversation then starts a fresh one. */
   const handleSaveAndNew = useCallback(async () => {
     try {
-      await save(messages, activeModel);
+      await save(messages, activeRuntimeModel);
     } catch {
       return;
     }
     resetForNewConversation();
-  }, [save, messages, resetForNewConversation, activeModel]);
+  }, [save, messages, resetForNewConversation, activeRuntimeModel]);
 
   /** Discards the current conversation and starts a fresh one. */
   const handleJustNew = useCallback(() => {
@@ -2934,6 +3001,11 @@ function App() {
   }, [query, attachedImages]);
 
   const liveCapabilityConflictMessage = useMemo(() => {
+    if (isOpenRouterProvider) {
+      return config.openrouter.configured
+        ? null
+        : 'OpenRouter is selected. Add an API key in Settings to start chatting.';
+    }
     const envMessage = getEnvironmentMessage(
       ollamaReachable,
       availableModels.length,
@@ -2953,6 +3025,8 @@ function App() {
     activeModelCapabilities,
     ollamaReachable,
     availableModels.length,
+    isOpenRouterProvider,
+    config.openrouter.configured,
   ]);
 
   /**
@@ -2966,6 +3040,7 @@ function App() {
    * in the conversation.
    */
   const hasBlockingConflict = useMemo(() => {
+    if (isOpenRouterProvider) return !config.openrouter.configured;
     const envMessage = getEnvironmentMessage(
       ollamaReachable,
       availableModels.length,
@@ -2982,6 +3057,8 @@ function App() {
     activeModel,
     activeModelCapabilities,
     composeCapabilityState,
+    isOpenRouterProvider,
+    config.openrouter.configured,
   ]);
 
   /**
@@ -3022,7 +3099,7 @@ function App() {
       const now = new Date();
       const content = await serializeForFile(
         snapshot,
-        { fallbackModel: activeModel },
+        { fallbackModel: activeRuntimeModel },
         now,
       );
       // Hide Thuki via NSPanel alpha while the native save dialog is
@@ -3051,7 +3128,7 @@ function App() {
     }
     // `messages` is read via `messagesRef.current` so a long streaming
     // response does not reallocate this callback per Token chunk.
-  }, [activeModel]);
+  }, [activeRuntimeModel]);
 
   /**
    * Copies the current session to the system clipboard as body-only
@@ -3991,9 +4068,9 @@ function App() {
                                 onHistoryOpen={handleHistoryToggle}
                                 onImagePreview={handleChatImagePreview}
                                 searchStage={searchStage}
-                                activeModel={activeModel}
+                                activeModel={activeRuntimeModel}
                                 onModelPickerToggle={
-                                  ollamaReachable
+                                  !isOpenRouterProvider && ollamaReachable
                                     ? handleModelPickerToggle
                                     : undefined
                                 }
@@ -4013,7 +4090,9 @@ function App() {
                     In chat mode the trigger and drawer move to the header area above. */}
                           {!isChatMode && (
                             <AnimatePresence>
-                              {isModelPickerOpen && ollamaReachable ? (
+                              {isModelPickerOpen &&
+                              !isOpenRouterProvider &&
+                              ollamaReachable ? (
                                 <motion.div
                                   ref={modelPickerAskBarRef}
                                   key="model-picker-askbar"
@@ -4125,7 +4204,7 @@ function App() {
                             {(studyPackStatus || activeStudyPack) && (
                               <p className="mt-1 truncate text-[11px] leading-4 text-text-secondary/70">
                                 {studyPackStatus ??
-                                  `${activeStudyPack?.indexed_count ?? 0}/${activeStudyPack?.item_count ?? 0} indexed`}
+                                  `${activeStudyPack?.indexed_count ?? 0}/${activeStudyPack?.item_count ?? 0} indexed · ${activeStudyPack?.embedded_count ?? 0}/${activeStudyPack?.chunk_count ?? 0} embedded`}
                               </p>
                             )}
                             {activeStudyPack &&
@@ -4141,7 +4220,8 @@ function App() {
                                           100,
                                       )}%`,
                                       opacity:
-                                        indexingPackId === activeStudyPack.id
+                                        indexingPackId === activeStudyPack.id ||
+                                        embeddingPackId === activeStudyPack.id
                                           ? 0.65
                                           : 1,
                                     }}
@@ -4256,7 +4336,7 @@ function App() {
                             onScreenshot={handleScreenshot}
                             isDragOver={isDragOver ?? undefined}
                             onModelPickerToggle={
-                              ollamaReachable
+                              !isOpenRouterProvider && ollamaReachable
                                 ? handleModelPickerToggle
                                 : undefined
                             }
@@ -4266,9 +4346,10 @@ function App() {
                             }
                             shake={shakeAskBar}
                             maxImages={config.window.maxImages}
-                            onFirstKeystroke={() =>
-                              void invoke('warm_up_model')
-                            }
+                            onFirstKeystroke={() => {
+                              if (!isOpenRouterProvider)
+                                void invoke('warm_up_model');
+                            }}
                           />
                         </div>
 
@@ -4371,7 +4452,10 @@ function App() {
                   so it appears just below the header pill trigger without pushing
                   the conversation content. Click-outside closes it. */}
               <AnimatePresence>
-                {isChatMode && isModelPickerOpen && ollamaReachable ? (
+                {isChatMode &&
+                isModelPickerOpen &&
+                !isOpenRouterProvider &&
+                ollamaReachable ? (
                   <motion.div
                     ref={modelPickerDropdownRef}
                     key="model-picker-dropdown"

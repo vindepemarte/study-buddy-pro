@@ -64,7 +64,7 @@ Saves readable text from an attached image or `/screen` capture into the active 
 - `/screen /remember priority signs`: captures the screen and saves it under the active pack
 - `/remember chapter 4` with an attached image: OCRs the image and saves it as context
 
-**Behavior:** Runs local OCR, optionally adds MLX Vision structured page notes on Apple Silicon, copies available image files into app data, stores the extracted text as structured Study Pack context, and indexes it for later questions and answer checks. It does not call the chat model.
+**Behavior:** Runs local OCR, optionally adds MLX Vision structured page notes on Apple Silicon, copies available image files into app data, stores the extracted text as structured Study Pack context, and indexes it for later questions and answer checks. If OpenRouter embeddings are configured, the saved chunks are embedded in the background and vectors are stored locally. It does not call the chat model.
 
 **Composable:** `/remember` can combine with `/screen` or multiple attached screenshots. The active Study Pack is required.
 
@@ -82,7 +82,7 @@ Checks a quiz answer or question using retrieved context from the active Study P
 - `/check is B correct here?` asks using the active Study Pack
 - `/screen /check did I choose the right answer?`: OCRs the visible quiz and compares it with saved context
 
-**Behavior:** Retrieves relevant indexed chunks from the active Study Pack, optionally OCRs the current screenshot, and asks the model to correct the student step by step with source IDs. If the saved context is insufficient, it should say what is missing rather than guess.
+**Behavior:** Retrieves relevant indexed chunks from the active Study Pack using lexical, FTS, and available semantic embedding scores, optionally OCRs the current screenshot, and asks the model to correct the student step by step with source IDs. If the saved context is insufficient, it should say what is missing rather than guess.
 
 **Composable:** `/check` can combine with `/screen` and `/think`. The active Study Pack is required.
 

@@ -120,7 +120,7 @@ export const COMMANDS: readonly Command[] = [
         '`/remember chapter 4` with an attached image: OCRs the image and saves it as context',
       ],
       behavior:
-        'Runs local OCR, optionally adds MLX Vision structured page notes on Apple Silicon, copies available image files into app data, stores the extracted text as structured Study Pack context, and indexes it for later questions and answer checks. It does not call the chat model.',
+        'Runs local OCR, optionally adds MLX Vision structured page notes on Apple Silicon, copies available image files into app data, stores the extracted text as structured Study Pack context, and indexes it for later questions and answer checks. If OpenRouter embeddings are configured, the saved chunks are embedded in the background and vectors are stored locally. It does not call the chat model.',
       composability:
         '`/remember` can combine with `/screen` or multiple attached screenshots. The active Study Pack is required.',
       permission:
@@ -148,7 +148,7 @@ export const COMMANDS: readonly Command[] = [
         '`/screen /check did I choose the right answer?`: OCRs the visible quiz and compares it with saved context',
       ],
       behavior:
-        'Retrieves relevant indexed chunks from the active Study Pack, optionally OCRs the current screenshot, and asks the model to correct the student step by step with source IDs. If the saved context is insufficient, it should say what is missing rather than guess.',
+        'Retrieves relevant indexed chunks from the active Study Pack using lexical, FTS, and available semantic embedding scores, optionally OCRs the current screenshot, and asks the model to correct the student step by step with source IDs. If the saved context is insufficient, it should say what is missing rather than guess.',
       composability:
         '`/check` can combine with `/screen` and `/think`. The active Study Pack is required.',
     },

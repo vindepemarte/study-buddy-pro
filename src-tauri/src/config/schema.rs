@@ -14,19 +14,24 @@
 use serde::{Deserialize, Serialize};
 
 use super::defaults::{
-    DEFAULT_DEBUG_TRACE_ENABLED, DEFAULT_JUDGE_TIMEOUT_S, DEFAULT_KEEP_WARM_INACTIVITY_MINUTES,
-    DEFAULT_MAX_CHAT_HEIGHT, DEFAULT_MAX_IMAGES, DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX,
-    DEFAULT_OLLAMA_URL, DEFAULT_OVERLAY_WIDTH, DEFAULT_PIPELINE_WALL_CLOCK_BUDGET_S,
-    DEFAULT_QUOTE_MAX_CONTEXT_LENGTH, DEFAULT_QUOTE_MAX_DISPLAY_CHARS,
-    DEFAULT_QUOTE_MAX_DISPLAY_LINES, DEFAULT_READER_BATCH_TIMEOUT_S,
-    DEFAULT_READER_PER_URL_TIMEOUT_S, DEFAULT_READER_URL, DEFAULT_ROUTER_TIMEOUT_S,
-    DEFAULT_SEARCH_TIMEOUT_S, DEFAULT_SEARXNG_MAX_RESULTS, DEFAULT_SEARXNG_URL,
-    DEFAULT_SYSTEM_CUSTOMIZED, DEFAULT_SYSTEM_PROMPT_BASE, DEFAULT_TEXT_BASE_PX,
-    DEFAULT_TEXT_FONT_WEIGHT, DEFAULT_TEXT_LETTER_SPACING_PX, DEFAULT_TEXT_LINE_HEIGHT,
-    DEFAULT_TOP_K_URLS, DEFAULT_UPDATER_AUTO_CHECK, DEFAULT_UPDATER_CHECK_INTERVAL_HOURS,
-    DEFAULT_UPDATER_MANIFEST_URL, DEFAULT_VOICE_AUTO_SPEAK_STUDY, DEFAULT_VOICE_BASE_URL,
-    DEFAULT_VOICE_ENABLED, DEFAULT_VOICE_LANG, DEFAULT_VOICE_MAX_CHUNK_LENGTH, DEFAULT_VOICE_NAME,
-    DEFAULT_VOICE_SPEED, DEFAULT_VOICE_STEPS,
+    DEFAULT_DEBUG_TRACE_ENABLED, DEFAULT_INFERENCE_PROVIDER, DEFAULT_JUDGE_TIMEOUT_S,
+    DEFAULT_KEEP_WARM_INACTIVITY_MINUTES, DEFAULT_MAX_CHAT_HEIGHT, DEFAULT_MAX_IMAGES,
+    DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX, DEFAULT_OLLAMA_URL, DEFAULT_OPENROUTER_APP_TITLE,
+    DEFAULT_OPENROUTER_BASE_URL, DEFAULT_OPENROUTER_CHAT_MODEL, DEFAULT_OPENROUTER_EMBEDDING_MODEL,
+    DEFAULT_OPENROUTER_GENERAL_MODEL, DEFAULT_OPENROUTER_REASONING_MODEL,
+    DEFAULT_OPENROUTER_SITE_URL, DEFAULT_OPENROUTER_STT_MODEL, DEFAULT_OPENROUTER_TTS_MODEL,
+    DEFAULT_OPENROUTER_USE_GENERAL_MODEL, DEFAULT_OPENROUTER_VISION_MODEL, DEFAULT_OVERLAY_WIDTH,
+    DEFAULT_PIPELINE_WALL_CLOCK_BUDGET_S, DEFAULT_QUOTE_MAX_CONTEXT_LENGTH,
+    DEFAULT_QUOTE_MAX_DISPLAY_CHARS, DEFAULT_QUOTE_MAX_DISPLAY_LINES,
+    DEFAULT_READER_BATCH_TIMEOUT_S, DEFAULT_READER_PER_URL_TIMEOUT_S, DEFAULT_READER_URL,
+    DEFAULT_ROUTER_TIMEOUT_S, DEFAULT_SEARCH_TIMEOUT_S, DEFAULT_SEARXNG_MAX_RESULTS,
+    DEFAULT_SEARXNG_URL, DEFAULT_SYSTEM_CUSTOMIZED, DEFAULT_SYSTEM_PROMPT_BASE,
+    DEFAULT_TEXT_BASE_PX, DEFAULT_TEXT_FONT_WEIGHT, DEFAULT_TEXT_LETTER_SPACING_PX,
+    DEFAULT_TEXT_LINE_HEIGHT, DEFAULT_TOP_K_URLS, DEFAULT_UPDATER_AUTO_CHECK,
+    DEFAULT_UPDATER_CHECK_INTERVAL_HOURS, DEFAULT_UPDATER_MANIFEST_URL,
+    DEFAULT_VOICE_AUTO_SPEAK_STUDY, DEFAULT_VOICE_BASE_URL, DEFAULT_VOICE_ENABLED,
+    DEFAULT_VOICE_LANG, DEFAULT_VOICE_MAX_CHUNK_LENGTH, DEFAULT_VOICE_NAME, DEFAULT_VOICE_SPEED,
+    DEFAULT_VOICE_STEPS,
 };
 
 /// Static, user-tunable inference daemon configuration.
@@ -42,6 +47,8 @@ use super::defaults::{
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct InferenceSection {
+    /// Active inference provider: "ollama" or "openrouter".
+    pub provider: String,
     /// HTTP base URL of the local Ollama instance.
     pub ollama_url: String,
     /// Minutes of inactivity before Thuki tells Ollama to release the model.
@@ -59,9 +66,49 @@ pub struct InferenceSection {
 impl Default for InferenceSection {
     fn default() -> Self {
         Self {
+            provider: DEFAULT_INFERENCE_PROVIDER.to_string(),
             ollama_url: DEFAULT_OLLAMA_URL.to_string(),
             keep_warm_inactivity_minutes: DEFAULT_KEEP_WARM_INACTIVITY_MINUTES,
             num_ctx: DEFAULT_NUM_CTX,
+        }
+    }
+}
+
+/// OpenRouter API configuration. The API key is stored locally in the user's
+/// app config file and never leaves the machine except as the Authorization
+/// header for OpenRouter requests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct OpenRouterSection {
+    pub api_key: String,
+    pub base_url: String,
+    pub use_general_model: bool,
+    pub general_model: String,
+    pub chat_model: String,
+    pub vision_model: String,
+    pub reasoning_model: String,
+    pub embedding_model: String,
+    pub stt_model: String,
+    pub tts_model: String,
+    pub app_title: String,
+    pub site_url: String,
+}
+
+impl Default for OpenRouterSection {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            base_url: DEFAULT_OPENROUTER_BASE_URL.to_string(),
+            use_general_model: DEFAULT_OPENROUTER_USE_GENERAL_MODEL,
+            general_model: DEFAULT_OPENROUTER_GENERAL_MODEL.to_string(),
+            chat_model: DEFAULT_OPENROUTER_CHAT_MODEL.to_string(),
+            vision_model: DEFAULT_OPENROUTER_VISION_MODEL.to_string(),
+            reasoning_model: DEFAULT_OPENROUTER_REASONING_MODEL.to_string(),
+            embedding_model: DEFAULT_OPENROUTER_EMBEDDING_MODEL.to_string(),
+            stt_model: DEFAULT_OPENROUTER_STT_MODEL.to_string(),
+            tts_model: DEFAULT_OPENROUTER_TTS_MODEL.to_string(),
+            app_title: DEFAULT_OPENROUTER_APP_TITLE.to_string(),
+            site_url: DEFAULT_OPENROUTER_SITE_URL.to_string(),
         }
     }
 }
@@ -344,6 +391,7 @@ impl Default for UpdaterSection {
 #[serde(default)]
 pub struct AppConfig {
     pub inference: InferenceSection,
+    pub openrouter: OpenRouterSection,
     pub prompt: PromptSection,
     pub window: WindowSection,
     pub quote: QuoteSection,

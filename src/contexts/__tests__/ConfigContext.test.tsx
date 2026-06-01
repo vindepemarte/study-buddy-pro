@@ -60,6 +60,7 @@ describe('ConfigContext', () => {
       const custom: AppConfig = {
         ...DEFAULT_CONFIG,
         inference: {
+          ...DEFAULT_CONFIG.inference,
           ollamaUrl: 'http://example.test:11434',
         },
       };

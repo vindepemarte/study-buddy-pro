@@ -7,6 +7,9 @@
 
 /// Default Ollama HTTP endpoint (loopback, standard port).
 pub const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
+/// Default inference provider. `openrouter` enables API-first chat while
+/// leaving `ollama` available as the local/power-user route.
+pub const DEFAULT_INFERENCE_PROVIDER: &str = "ollama";
 
 /// Default inactivity window before Thuki tells Ollama to release the model.
 /// 0 means do not manage: Ollama's own 5-minute default applies.
@@ -32,6 +35,20 @@ pub const BOUNDS_NUM_CTX: (u32, u32) = (2048, 1_048_576);
 /// -1 = never release, 0 = disabled (Ollama default), 1..=1440 = explicit timeout.
 /// Values below -1 or above 1440 are clamped to the compiled default.
 pub const BOUNDS_KEEP_WARM_INACTIVITY_MINUTES: (i32, i32) = (-1, 1440);
+
+/// OpenRouter defaults. Model availability and pricing are refreshed from
+/// OpenRouter's API at runtime, so these are only initial preferences.
+pub const DEFAULT_OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
+pub const DEFAULT_OPENROUTER_USE_GENERAL_MODEL: bool = true;
+pub const DEFAULT_OPENROUTER_GENERAL_MODEL: &str = "qwen/qwen3.5-flash-02-23";
+pub const DEFAULT_OPENROUTER_CHAT_MODEL: &str = "qwen/qwen3.5-flash-02-23";
+pub const DEFAULT_OPENROUTER_VISION_MODEL: &str = "qwen/qwen3.5-flash-02-23";
+pub const DEFAULT_OPENROUTER_REASONING_MODEL: &str = "qwen/qwen3.5-flash-02-23";
+pub const DEFAULT_OPENROUTER_EMBEDDING_MODEL: &str = "qwen/qwen3-embedding-8b";
+pub const DEFAULT_OPENROUTER_STT_MODEL: &str = "openai/whisper-large-v3";
+pub const DEFAULT_OPENROUTER_TTS_MODEL: &str = "openai/gpt-4o-mini-tts-2025-12-15";
+pub const DEFAULT_OPENROUTER_APP_TITLE: &str = "Study Buddy Pro";
+pub const DEFAULT_OPENROUTER_SITE_URL: &str = "https://github.com/vindepemarte/study-buddy-pro";
 
 /// Built-in secretary persona prompt. User overrides via `[prompt] system` in
 /// the config file. The slash-command appendix is composed on top at load time
@@ -292,9 +309,23 @@ pub const MAX_MODEL_SLUG_LEN: usize = 256;
 /// Order matches `AppConfig` field ordering for review-friendliness.
 pub const ALLOWED_FIELDS: &[(&str, &str)] = &[
     // [inference]
+    ("inference", "provider"),
     ("inference", "ollama_url"),
     ("inference", "keep_warm_inactivity_minutes"),
     ("inference", "num_ctx"),
+    // [openrouter]
+    ("openrouter", "api_key"),
+    ("openrouter", "base_url"),
+    ("openrouter", "use_general_model"),
+    ("openrouter", "general_model"),
+    ("openrouter", "chat_model"),
+    ("openrouter", "vision_model"),
+    ("openrouter", "reasoning_model"),
+    ("openrouter", "embedding_model"),
+    ("openrouter", "stt_model"),
+    ("openrouter", "tts_model"),
+    ("openrouter", "app_title"),
+    ("openrouter", "site_url"),
     // [prompt]
     ("prompt", "system"),
     // [window]
@@ -342,6 +373,7 @@ pub const ALLOWED_FIELDS: &[(&str, &str)] = &[
 /// Mirrors the top-level structure of `AppConfig`.
 pub const ALLOWED_SECTIONS: &[&str] = &[
     "inference",
+    "openrouter",
     "prompt",
     "window",
     "quote",
