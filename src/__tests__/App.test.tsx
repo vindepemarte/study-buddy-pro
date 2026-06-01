@@ -3699,7 +3699,7 @@ describe('App', () => {
       });
     }
 
-    it('shows the live mismatch strip when a text-only model has an image attached', async () => {
+    it('does not show the live mismatch strip when a text-only model can use the OCR fallback', async () => {
       enableChannelCaptureWithResponses({
         get_model_picker_state: {
           active: 'llama3',
@@ -3722,17 +3722,10 @@ describe('App', () => {
       await act(async () => {});
       await showOverlay();
       await pasteImage();
-      await vi.waitFor(() => {
-        expect(
-          screen.getByTestId('capability-mismatch-strip'),
-        ).toBeInTheDocument();
-      });
-      expect(screen.getByTestId('capability-mismatch-strip')).toHaveTextContent(
-        'llama3 reads text only',
-      );
+      expect(screen.queryByTestId('capability-mismatch-strip')).toBeNull();
     });
 
-    it('refuses submit and shakes the ask bar when a text-only model has an image attached', async () => {
+    it('extracts visual context instead of blocking when a text-only model has an image attached', async () => {
       enableChannelCaptureWithResponses({
         get_model_picker_state: {
           active: 'llama3',
@@ -3746,6 +3739,7 @@ describe('App', () => {
           },
         },
         save_image_command: '/tmp/staged/img1.jpg',
+        extract_text_command: 'OCR text from the screenshot',
       });
       render(<App />);
       await act(async () => {});
@@ -3772,26 +3766,100 @@ describe('App', () => {
         fireEvent.click(screen.getByRole('button', { name: /send message/i }));
       });
 
-      // Capability strip remains the single surface for the conflict
-      // message; the duplicate transient toast was removed.
-      expect(screen.getByTestId('capability-mismatch-strip')).toHaveTextContent(
-        'llama3 reads text only',
+      await vi.waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('extract_text_command', {
+          imagePaths: ['/tmp/staged/img1.jpg'],
+        });
+      });
+      expect(invoke).toHaveBeenCalledWith(
+        'ask_ollama',
+        expect.objectContaining({
+          message: expect.stringContaining('OCR text from the screenshot'),
+          imagePaths: null,
+        }),
       );
-      // ask_ollama is NOT invoked.
-      const askInvocations = invoke.mock.calls.filter(
+      const askCall = invoke.mock.calls.find(
         (call) => call[0] === 'ask_ollama',
       );
-      expect(askInvocations.length).toBe(0);
-      // Compose state survives.
-      expect(
-        screen.getByPlaceholderText('Ask Study Buddy Pro anything...'),
-      ).toHaveValue('summarise these');
-      // Wait past the 600 ms shake reset so the cleanup runs and the
-      // shake state pulses back to false. This exercises the effect's
-      // setTimeout/clearTimeout path that the gate relies on.
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 650));
+      expect(askCall?.[1]?.message).toContain('selected model is text-only');
+      expect(askCall?.[1]?.message).toContain('[Student request]');
+      expect(screen.queryByTestId('capability-mismatch-strip')).toBeNull();
+    });
+
+    it('adds MLX Vision notes to the text-only image fallback when ready', async () => {
+      enableChannelCaptureWithResponses({
+        get_model_picker_state: {
+          active: 'llama3',
+          all: ['llama3'],
+          ollamaReachable: true,
+        },
+        get_model_capabilities: {
+          llama3: {
+            vision: false,
+            thinking: false,
+          },
+        },
+        mlx_vlm_status: {
+          supported: true,
+          apple_silicon: true,
+          python_available: true,
+          runtime_path: '/tmp/mlx-vlm',
+          venv_python: '/tmp/mlx-vlm/.venv/bin/python',
+          package_installed: true,
+          model_id: 'mlx-community/Qwen3-VL-8B-Instruct-4bit',
+          model_cached: true,
+          ready: true,
+          installed_versions: 'mlx-vlm',
+          error: null,
+        },
+        save_image_command: '/tmp/staged/img1.jpg',
+        extract_text_command: 'OCR text from the screenshot',
+        mlx_vlm_describe_images: {
+          model_id: 'mlx-community/Qwen3-VL-8B-Instruct-4bit',
+          notes: 'Structured visual notes from MLX',
+        },
       });
+      render(<App />);
+      await act(async () => {});
+      await showOverlay();
+      await pasteImage();
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(invoke).toHaveBeenCalledWith(
+            'save_image_command',
+            expect.anything(),
+          );
+        });
+      });
+
+      const textarea = screen.getByPlaceholderText(
+        'Ask Study Buddy Pro anything...',
+      );
+      act(() => {
+        fireEvent.change(textarea, { target: { value: 'what is shown?' } });
+      });
+      invoke.mockClear();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+      });
+
+      await vi.waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith(
+          'mlx_vlm_describe_images',
+          expect.objectContaining({
+            request: expect.objectContaining({
+              imagePaths: ['/tmp/staged/img1.jpg'],
+              ocrText: 'OCR text from the screenshot',
+            }),
+          }),
+        );
+      });
+      const askCall = invoke.mock.calls.find(
+        (call) => call[0] === 'ask_ollama',
+      );
+      expect(askCall?.[1]?.message).toContain(
+        'Structured visual notes from MLX',
+      );
     });
 
     it('does not gate submit when the active model has vision', async () => {

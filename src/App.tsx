@@ -141,6 +141,26 @@ function resolveReadyPaths(
   return paths;
 }
 
+function buildVisualTextPrompt(params: {
+  studentRequest: string;
+  ocrText: string | null;
+  mlxNotes: string | null;
+}): string {
+  const request = params.studentRequest.trim() || 'Explain what is shown.';
+  const sections = [
+    'The attached screenshot/image cannot be sent directly to the active chat model because the selected model is text-only.',
+    'Use the extracted visual context below as the source of truth for the student request. Do not pretend you saw the image directly. If the extracted context is insufficient, say exactly what is missing instead of guessing.',
+    `[Student request]\n${request}`,
+  ];
+  if (params.ocrText?.trim()) {
+    sections.push(`[OCR text]\n${params.ocrText.trim()}`);
+  }
+  if (params.mlxNotes?.trim()) {
+    sections.push(`[MLX Vision notes]\n${params.mlxNotes.trim()}`);
+  }
+  return sections.join('\n\n');
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -2336,9 +2356,81 @@ function App() {
     }
   }, [mlxVlmStatus?.model_id, refreshMlxVlmStatus]);
 
+  const shouldUseVisualTextFallback = useCallback(
+    (imagePaths: string[]) =>
+      imagePaths.length > 0 &&
+      !isOpenRouterProvider &&
+      activeModelCapabilities?.vision === false,
+    [activeModelCapabilities?.vision, isOpenRouterProvider],
+  );
+
+  const buildVisualTextFallbackPrompt = useCallback(
+    async (imagePaths: string[], studentRequest: string) => {
+      let ocrText: string | null = null;
+      try {
+        const extracted = await invoke<string>('extract_text_command', {
+          imagePaths,
+        });
+        const trimmed = extracted.trim();
+        if (trimmed && trimmed !== '[No text detected]') {
+          ocrText = trimmed;
+        }
+      } catch (err) {
+        if (!mlxVlmStatus?.ready) {
+          const message = `OCR failed${
+            typeof err === 'string'
+              ? `: ${err}`
+              : err instanceof Error
+                ? `: ${err.message}`
+                : ''
+          }`;
+          throw Object.assign(new Error(message), { cause: err });
+        }
+      }
+
+      let mlxNotes: string | null = null;
+      if (mlxVlmStatus?.ready) {
+        try {
+          const enrichment = await invoke<MlxVlmDescribeResponse>(
+            'mlx_vlm_describe_images',
+            {
+              request: {
+                imagePaths,
+                ocrText: ocrText ?? '[No text detected]',
+                note: studentRequest.trim() || null,
+                modelId: mlxVlmStatus.model_id,
+              },
+            },
+          );
+          mlxNotes = enrichment.notes.trim() || null;
+        } catch (err) {
+          setMlxVlmMessage(
+            `MLX Vision skipped: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+          void refreshMlxVlmStatus();
+        }
+      }
+
+      if (!ocrText && !mlxNotes) {
+        throw new Error(
+          'No readable text or visual notes were extracted from the image.',
+        );
+      }
+
+      return buildVisualTextPrompt({
+        studentRequest,
+        ocrText,
+        mlxNotes,
+      });
+    },
+    [mlxVlmStatus, refreshMlxVlmStatus],
+  );
+
   /** Fires the actual ask() call and cleans up attached images + input. */
   const executeSubmit = useCallback(
-    (
+    async (
       submitQuery: string,
       context: string | undefined,
       think?: boolean,
@@ -2348,6 +2440,42 @@ function App() {
         .filter((img) => img.filePath !== null)
         .map((img) => img.filePath as string);
       const images = readyPaths.length > 0 ? readyPaths : undefined;
+      if (shouldUseVisualTextFallback(readyPaths)) {
+        setIsSubmitPending(true);
+        setPendingUserMessage({
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: submitQuery,
+          quotedText: context,
+          imagePaths: readyPaths,
+        });
+        setQuery('');
+        if (inputRef.current) inputRef.current.style.height = 'auto';
+        try {
+          const visualPrompt = await buildVisualTextFallbackPrompt(
+            readyPaths,
+            promptOverride ?? submitQuery,
+          );
+          setIsSubmitPending(false);
+          setPendingUserMessage(null);
+          ask(submitQuery, context, undefined, think, visualPrompt, readyPaths);
+        } catch (err) {
+          setIsSubmitPending(false);
+          setPendingUserMessage(null);
+          setQuery(submitQuery);
+          setSelectedContext(context ?? null);
+          setCaptureError(err instanceof Error ? err.message : String(err));
+          return;
+        }
+        setSelectedContext(null);
+        for (const img of attachedImages) {
+          URL.revokeObjectURL(img.blobUrl);
+        }
+        setAttachedImages([]);
+        return;
+      }
+      setIsSubmitPending(false);
+      setPendingUserMessage(null);
       ask(submitQuery, context, images, think, promptOverride);
       setSelectedContext(null);
       setQuery('');
@@ -2357,7 +2485,14 @@ function App() {
       setAttachedImages([]);
       inputRef.current!.style.height = 'auto';
     },
-    [ask, attachedImages, setSelectedContext],
+    [
+      ask,
+      attachedImages,
+      buildVisualTextFallbackPrompt,
+      setCaptureError,
+      setSelectedContext,
+      shouldUseVisualTextFallback,
+    ],
   );
 
   /**
@@ -2430,13 +2565,43 @@ function App() {
       screenCaptureInputSnapshotRef.current = null;
       if (wasCancelled) return;
 
+      const readyPaths = resolveReadyPaths(attachedImages, screenshotPath);
+      if (shouldUseVisualTextFallback(readyPaths)) {
+        setPendingUserMessage({
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: fullQuery,
+          quotedText: context,
+          imagePaths: readyPaths,
+        });
+        try {
+          const visualPrompt = await buildVisualTextFallbackPrompt(
+            readyPaths,
+            promptOverride ?? fullQuery,
+          );
+          setCaptureError(null);
+          setIsSubmitPending(false);
+          setPendingUserMessage(null);
+          ask(fullQuery, context, undefined, think, visualPrompt, readyPaths);
+        } catch (err) {
+          setIsSubmitPending(false);
+          setPendingUserMessage(null);
+          setQuery(fullQuery);
+          setSelectedContext(context ?? null);
+          setCaptureError(err instanceof Error ? err.message : String(err));
+          return;
+        }
+        for (const img of attachedImages) {
+          URL.revokeObjectURL(img.blobUrl);
+        }
+        setAttachedImages([]);
+        return;
+      }
+
       // Capture succeeded: finalize the submit.
       setCaptureError(null);
       setIsSubmitPending(false);
       setPendingUserMessage(null);
-
-      const readyPaths = resolveReadyPaths(attachedImages, screenshotPath);
-
       ask(fullQuery, context, readyPaths, think, promptOverride);
       for (const img of attachedImages) {
         URL.revokeObjectURL(img.blobUrl);
@@ -2447,9 +2612,11 @@ function App() {
       selectedContext,
       attachedImages,
       ask,
+      buildVisualTextFallbackPrompt,
       getTraceConversationId,
       setSelectedContext,
       setCaptureError,
+      shouldUseVisualTextFallback,
       quote.maxContextLength,
     ],
   );
@@ -3120,7 +3287,7 @@ function App() {
     let maxImages = 0;
     let hasThinking = false;
     for (const m of messages) {
-      const count = m.imagePaths?.length ?? 0;
+      const count = m.visualTextFallback ? 0 : (m.imagePaths?.length ?? 0);
       if (count > maxImages) maxImages = count;
       if ((m.thinkingContent?.length ?? 0) > 0) hasThinking = true;
     }
@@ -3144,24 +3311,43 @@ function App() {
     const hasScreenCommand = found.has('/screen');
     const hasRememberCommand = found.has('/remember');
     const hasCheckCommand = found.has('/check');
+    const hasSearchCommand = found.has('/search');
     const hasUtilityCommand = Array.from(found).some((t) => {
       const cmd = COMMANDS.find((c) => c.trigger === t);
       return !!cmd?.promptTemplate;
     });
-    // /extract, /remember, /check, and utility+image/screen route screenshots
-    // through OCR first; suppress image and screen counts so the capability
-    // gate does not require a vision model for text extracted locally.
+    const hasVisualInput = attachedImages.length > 0 || hasScreenCommand;
+    // /extract, /remember, /check, utility+image/screen, and plain
+    // image/screen submits to text-only Ollama models route screenshots
+    // through OCR/MLX first. Suppress image and screen counts for those
+    // paths so the capability gate only blocks content that will actually be
+    // sent as image bytes.
     const ocrPath =
       hasExtractCommand ||
       hasRememberCommand ||
       hasCheckCommand ||
       (hasUtilityCommand && (attachedImages.length > 0 || hasScreenCommand));
+    const directVisualTextPath =
+      !isOpenRouterProvider &&
+      activeModelCapabilities?.vision === false &&
+      hasVisualInput &&
+      !hasExtractCommand &&
+      !hasRememberCommand &&
+      !hasCheckCommand &&
+      !hasSearchCommand &&
+      !hasUtilityCommand;
+    const imageToTextPath = ocrPath || directVisualTextPath;
     return {
-      hasScreenCommand: ocrPath ? false : hasScreenCommand,
+      hasScreenCommand: imageToTextPath ? false : hasScreenCommand,
       hasThinkCommand: found.has('/think'),
-      imageCount: ocrPath ? 0 : attachedImages.length,
+      imageCount: imageToTextPath ? 0 : attachedImages.length,
     };
-  }, [query, attachedImages]);
+  }, [
+    query,
+    attachedImages,
+    activeModelCapabilities?.vision,
+    isOpenRouterProvider,
+  ]);
 
   const liveCapabilityConflictMessage = useMemo(() => {
     if (isOpenRouterProvider) {
@@ -3649,7 +3835,7 @@ function App() {
       return;
     }
 
-    executeSubmit(
+    void executeSubmit(
       trimmedQuery,
       context,
       hasThink || undefined,
@@ -3746,22 +3932,13 @@ function App() {
         void handleScreenSubmit(ref.query, ref.think, ref.promptOverride);
         return;
       case 'plain': {
-        setIsSubmitPending(false);
-        // Clear the preview message - ask() will add the real one with file paths.
         setPendingUserMessage(null);
-        const images = attachedImages.map((img) => img.filePath as string);
-        void ask(
+        void executeSubmit(
           ref.query,
           ref.context,
-          images,
           ref.think || undefined,
           ref.promptOverride,
         );
-        setSelectedContext(null);
-        for (const img of attachedImages) {
-          URL.revokeObjectURL(img.blobUrl);
-        }
-        setAttachedImages([]);
         return;
       }
     }
@@ -3773,6 +3950,7 @@ function App() {
     handleScreenSubmit,
     handleRememberSubmit,
     handleCheckSubmit,
+    executeSubmit,
     setSelectedContext,
   ]);
   /* eslint-enable @eslint-react/set-state-in-effect */

@@ -30,6 +30,8 @@ export interface Message {
   quotedText?: string;
   /** Absolute file paths of images attached to this message, if any. */
   imagePaths?: string[];
+  /** True when image thumbnails are display-only and the model received OCR/vision notes as text. */
+  visualTextFallback?: boolean;
   /** Present on assistant messages that represent an Ollama error callout. */
   errorKind?: OllamaErrorKind;
   /** Accumulated thinking content from the model, if thinking mode was used. */
@@ -264,7 +266,12 @@ export function useOllama(
       promptOverride?: string,
       displayImagePaths?: string[],
     ) => {
-      if (!displayContent.trim() && (!imagePaths || imagePaths.length === 0)) {
+      if (
+        !displayContent.trim() &&
+        !promptOverride?.trim() &&
+        (!imagePaths || imagePaths.length === 0) &&
+        (!displayImagePaths || displayImagePaths.length === 0)
+      ) {
         return;
       }
 
@@ -275,6 +282,8 @@ export function useOllama(
       }
       if (activeGenerationRef.current) return;
 
+      const displayOnlyImages =
+        !!displayImagePaths?.length && (!imagePaths || imagePaths.length === 0);
       const bubbleImages = displayImagePaths ?? imagePaths;
       const userMsg: Message = {
         id: crypto.randomUUID(),
@@ -283,6 +292,7 @@ export function useOllama(
         quotedText,
         imagePaths:
           bubbleImages && bubbleImages.length > 0 ? bubbleImages : undefined,
+        visualTextFallback: displayOnlyImages || undefined,
       };
 
       const assistantId = crypto.randomUUID();

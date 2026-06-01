@@ -27,9 +27,9 @@ A vision model is normally required when an image is part of the request. Models
 2. The recognized text replaces the image in the prompt.
 3. The active model receives plain text only.
 
-This means you can use `llama3.2:3b`, `qwen2.5:7b`, `gemma:7b`, or any other text-only chat model on image inputs as long as you go through one of the OCR-supported commands. Windows still needs `gemma4:e2b` installed for the OCR step.
+This means you can use `llama3.2:3b`, `qwen2.5:7b`, `gemma:7b`, or any other text-only chat model on image inputs as long as the request routes through the OCR path. Windows still needs `gemma4:e2b` installed for the OCR step.
 
-For plain submits (no slash command) and `/screen` alone, a vision-capable model is still required because the image bytes go directly to the model.
+For plain submits (no slash command) and `/screen` alone, Study Buddy Pro now checks the active chat model first. If the selected Ollama model is vision-capable, image bytes are sent directly. If the selected Ollama model is text-only, the app runs local OCR first and, on Apple Silicon when MLX Vision is ready, adds MLX structured notes; the chat model receives only that extracted text context. OpenRouter image turns still route through the configured OpenRouter vision model.
 
 ## What is OCR?
 
